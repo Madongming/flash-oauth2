@@ -1,0 +1,144 @@
+version: '3.8'
+
+services:
+  # PostgreSQL数据库（测试用）
+  postgres-test:
+    image: postgres:15-alpine
+    container_name: oauth2-postgres-test
+    environment:
+      POSTGRES_DB: oauth2_test
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 1q2w3e4r
+    ports:
+      - '5433:5432' # 使用不同端口避免与开发环境冲突
+    volumes:
+      - postgres_test_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - oauth2-test-network
+
+  # Redis缓存（测试用）
+  redis-test:
+    image: redis:7-alpine
+    container_name: oauth2-redis-test
+    ports:
+      - '6380:6379' # 使用不同端口避免与开发环境冲突
+    volumes:
+      - redis_test_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - oauth2-test-network
+
+  # 测试数据库初始化器
+  test-db-init:
+    image: postgres:15-alpine
+    container_name: oauth2-test-db-init
+    depends_on:
+      postgres-test:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: 1q2w3e4r
+    command: >
+      sh -c "
+        echo '正在初始化测试数据库...'
+        psql -h postgres-test -U postgres -d oauth2_test -c '
+          -- 创建测试用户表
+          CREATE TABLE IF NOT EXISTS users (
+            id SERIAL PRIMARY KEY,
+            phone VARCHAR(20) UNIQUE NOT NULL,
+            password_hash VARCHAR(255),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          );
+          
+          -- 创建OAuth2客户端表
+          CREATE TABLE IF NOT EXISTS oauth2_clients (
+            id SERIAL PRIMARY KEY,
+            client_id VARCHAR(255) UNIQUE NOT NULL,
+            client_secret VARCHAR(255) NOT NULL,
+            redirect_uris TEXT[] NOT NULL,
+            grant_types TEXT[] NOT NULL DEFAULT ''{\"authorization_code\", \"refresh_token\"}'',
+            scope TEXT DEFAULT ''openid profile'',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          );
+          
+          -- 创建授权码表
+          CREATE TABLE IF NOT EXISTS authorization_codes (
+            id SERIAL PRIMARY KEY,
+            code VARCHAR(255) UNIQUE NOT NULL,
+            client_id VARCHAR(255) NOT NULL,
+            user_id INTEGER NOT NULL,
+            redirect_uri TEXT NOT NULL,
+            scope TEXT,
+            expires_at TIMESTAMP NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          );
+          
+          -- 创建访问令牌表
+          CREATE TABLE IF NOT EXISTS access_tokens (
+            id SERIAL PRIMARY KEY,
+            token VARCHAR(500) UNIQUE NOT NULL,
+            client_id VARCHAR(255) NOT NULL,
+            user_id INTEGER NOT NULL,
+            scope TEXT,
+            expires_at TIMESTAMP NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          );
+          
+          -- 创建刷新令牌表
+          CREATE TABLE IF NOT EXISTS refresh_tokens (
+            id SERIAL PRIMARY KEY,
+            token VARCHAR(500) UNIQUE NOT NULL,
+            client_id VARCHAR(255) NOT NULL,
+            user_id INTEGER NOT NULL,
+            scope TEXT,
+            expires_at TIMESTAMP NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          );
+          
+          -- 插入测试客户端
+          INSERT INTO oauth2_clients (client_id, client_secret, redirect_uris, grant_types, scope)
+          VALUES (
+            ''test-client'',
+            ''test-secret'',
+            ''{\"http://localhost:3000/callback\", \"http://localhost:8081/callback\"}'',
+            ''{\"authorization_code\", \"refresh_token\"}'',
+            ''openid profile email phone''
+          ) ON CONFLICT (client_id) DO NOTHING;
+          
+          -- 插入测试用户
+          INSERT INTO users (phone, password_hash)
+          VALUES (
+            ''13800138000'',
+            ''$2a$10$N9qo8uLOickgx2ZMRZoMye9xT4mYm4qVT4W8HjZUe8Y.GZh5x5WC6''  -- password: testpass123
+          ) ON CONFLICT (phone) DO NOTHING;
+          
+          -- 创建索引以提高查询性能
+          CREATE INDEX IF NOT EXISTS idx_users_phone ON users(phone);
+          CREATE INDEX IF NOT EXISTS idx_oauth2_clients_client_id ON oauth2_clients(client_id);
+          CREATE INDEX IF NOT EXISTS idx_authorization_codes_code ON authorization_codes(code);
+          CREATE INDEX IF NOT EXISTS idx_access_tokens_token ON access_tokens(token);
+          CREATE INDEX IF NOT EXISTS idx_refresh_tokens_token ON refresh_tokens(token);
+        '
+        echo '测试数据库初始化完成！'
+      "
+    networks:
+      - oauth2-test-network
+
+volumes:
+  postgres_test_data:
+    driver: local
+  redis_test_data:
+    driver: local
+
+networks:
+  oauth2-test-network:
+    driver: bridge

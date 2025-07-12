@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{.title}}</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 15px;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+      overflow: hidden;
+    }
+
+    .header {
+      background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+      color: white;
+      padding: 30px;
+      text-align: center;
+    }
+
+    .header h1 {
+      font-size: 2.5rem;
+      margin-bottom: 10px;
+    }
+
+    .header p {
+      opacity: 0.9;
+      font-size: 1.1rem;
+    }
+
+    .content {
+      padding: 40px;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 20px;
+      margin-bottom: 40px;
+    }
+
+    .stat-card {
+      background: linear-gradient(135deg, #74b9ff 0%, #0984e3 100%);
+      color: white;
+      padding: 25px;
+      border-radius: 10px;
+      text-align: center;
+      box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+    }
+
+    .stat-card h3 {
+      font-size: 2rem;
+      margin-bottom: 10px;
+    }
+
+    .actions {
+      display: flex;
+      gap: 15px;
+      margin-bottom: 40px;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      padding: 12px 24px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 1rem;
+      transition: all 0.3s ease;
+      text-decoration: none;
+      display: inline-block;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #00b894 0%, #00a085 100%);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 5px 15px rgba(0, 184, 148, 0.4);
+    }
+
+    .btn-secondary {
+      background: linear-gradient(135deg, #6c5ce7 0%, #5f3dc4 100%);
+      color: white;
+    }
+
+    .btn-secondary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 5px 15px rgba(108, 92, 231, 0.4);
+    }
+
+    .apps-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+      gap: 25px;
+    }
+
+    .app-card {
+      background: white;
+      border: 1px solid #e1e8ed;
+      border-radius: 12px;
+      padding: 25px;
+      box-shadow: 0 5px 15px rgba(0, 0, 0, 0.08);
+      transition: all 0.3s ease;
+    }
+
+    .app-card:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 15px 35px rgba(0, 0, 0, 0.15);
+    }
+
+    .app-header {
+      display: flex;
+      justify-content: between;
+      align-items: center;
+      margin-bottom: 15px;
+    }
+
+    .app-name {
+      font-size: 1.3rem;
+      font-weight: bold;
+      color: #2c3e50;
+      margin-bottom: 5px;
+    }
+
+    .app-status {
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      font-weight: bold;
+    }
+
+    .status-active {
+      background: #d4edda;
+      color: #155724;
+    }
+
+    .status-suspended {
+      background: #f8d7da;
+      color: #721c24;
+    }
+
+    .app-info {
+      margin-bottom: 20px;
+    }
+
+    .app-info p {
+      margin-bottom: 8px;
+      color: #7f8c8d;
+    }
+
+    .app-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .btn-small {
+      padding: 8px 16px;
+      font-size: 0.9rem;
+    }
+
+    .btn-danger {
+      background: linear-gradient(135deg, #e17055 0%, #d63031 100%);
+      color: white;
+    }
+
+    .btn-info {
+      background: linear-gradient(135deg, #74b9ff 0%, #0984e3 100%);
+      color: white;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: #7f8c8d;
+    }
+
+    .empty-state h3 {
+      font-size: 1.5rem;
+      margin-bottom: 15px;
+    }
+
+    @media (max-width: 768px) {
+      .container {
+        margin: 10px;
+      }
+
+      .header {
+        padding: 20px;
+      }
+
+      .header h1 {
+        font-size: 2rem;
+      }
+
+      .content {
+        padding: 20px;
+      }
+
+      .stats {
+        grid-template-columns: 1fr;
+      }
+
+      .actions {
+        flex-direction: column;
+      }
+
+      .apps-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🔐 Key Management Platform</h1>
+      <p>Manage external applications and their cryptographic keys</p>
+    </div>
+
+    <div class="content">
+      <div class="stats">
+        <div class="stat-card">
+          <h3>{{len .apps}}</h3>
+          <p>Total Applications</p>
+        </div>
+        <div class="stat-card">
+          <h3>{{countActive .apps}}</h3>
+          <p>Active Applications</p>
+        </div>
+      </div>
+
+      <div class="actions">
+        <a href="/admin/developers/new" class="btn btn-primary">📝 Register Developer</a>
+        <a href="/admin/apps/new" class="btn btn-secondary">🚀 Register Application</a>
+        <a href="/api/docs" class="btn btn-secondary">📚 API Documentation</a>
+      </div>
+
+      {{if .apps}}
+      <div class="apps-grid">
+        {{range .apps}}
+        <div class="app-card">
+          <div class="app-header">
+            <div class="app-name">{{.Name}}</div>
+            <span class="app-status status-{{.Status}}">{{.Status}}</span>
+          </div>
+
+          <div class="app-info">
+            <p><strong>ID:</strong> {{.ID}}</p>
+            <p><strong>Developer:</strong> {{.DeveloperID}}</p>
+            <p><strong>Description:</strong> {{.Description}}</p>
+            <p><strong>Callback URL:</strong> {{.CallbackURL}}</p>
+            <p><strong>Scopes:</strong> {{.Scopes}}</p>
+            <p><strong>Created:</strong> {{.CreatedAt.Format "2006-01-02 15:04"}}</p>
+          </div>
+
+          <div class="app-actions">
+            <a href="/admin/apps/{{.ID}}" class="btn btn-info btn-small">🔍 View Details</a>
+            <a href="/admin/apps/{{.ID}}/keys" class="btn btn-secondary btn-small">🔑 Manage Keys</a>
+            {{if eq .Status "active"}}
+            <button class="btn btn-danger btn-small" onclick="revokeApp('{{.ID}}')">🚫 Revoke</button>
+            {{end}}
+          </div>
+        </div>
+        {{end}}
+      </div>
+      {{else}}
+      <div class="empty-state">
+        <h3>No Applications Registered</h3>
+        <p>Get started by registering your first developer and application.</p>
+        <a href="/admin/developers/new" class="btn btn-primary" style="margin-top: 20px;">Register Developer</a>
+      </div>
+      {{end}}
+    </div>
+  </div>
+
+  <script>
+    function revokeApp (appId) {
+      if (confirm('Are you sure you want to revoke this application? This action cannot be undone.')) {
+        fetch(`/api/admin/apps/${appId}/revoke`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        })
+          .then(response => response.json())
+          .then(data => {
+            if (data.error) {
+              alert('Error: ' + data.error)
+            } else {
+              alert('Application revoked successfully')
+              location.reload()
+            }
+          })
+          .catch(error => {
+            alert('Error: ' + error.message)
+          })
+      }
+    }
+  </script>
+</body>
+
+</html>

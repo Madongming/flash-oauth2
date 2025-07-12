@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OAuth2 客户端演示</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 2rem;
+      background: #f5f5f5;
+    }
+
+    .container {
+      background: white;
+      padding: 2rem;
+      border-radius: 10px;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    }
+
+    h1 {
+      color: #333;
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+
+    .step {
+      margin: 2rem 0;
+      padding: 1rem;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+      background: #f9f9f9;
+    }
+
+    .step h3 {
+      margin-top: 0;
+      color: #444;
+    }
+
+    button {
+      background: #007bff;
+      color: white;
+      border: none;
+      padding: 0.5rem 1rem;
+      border-radius: 5px;
+      cursor: pointer;
+      margin: 0.5rem 0;
+    }
+
+    button:hover {
+      background: #0056b3;
+    }
+
+    .token-display {
+      background: #f8f9fa;
+      border: 1px solid #dee2e6;
+      border-radius: 5px;
+      padding: 1rem;
+      margin: 1rem 0;
+      word-wrap: break-word;
+      font-family: monospace;
+      font-size: 0.9rem;
+    }
+
+    .error {
+      color: #dc3545;
+      background: #f8d7da;
+      border: 1px solid #f5c6cb;
+      padding: 0.75rem;
+      border-radius: 5px;
+      margin: 1rem 0;
+    }
+
+    .success {
+      color: #155724;
+      background: #d4edda;
+      border: 1px solid #c3e6cb;
+      padding: 0.75rem;
+      border-radius: 5px;
+      margin: 1rem 0;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <h1>Flash OAuth2 客户端演示</h1>
+
+    <div class="step">
+      <h3>步骤 1: 获取授权码</h3>
+      <p>点击下面的按钮跳转到OAuth2授权服务器进行登录</p>
+      <button onclick="startOAuth2Flow()">开始授权</button>
+    </div>
+
+    <div class="step">
+      <h3>步骤 2: 授权码</h3>
+      <p>授权成功后，授权码会显示在下面：</p>
+      <div id="auth-code" class="token-display">等待授权...</div>
+    </div>
+
+    <div class="step">
+      <h3>步骤 3: 交换访问令牌</h3>
+      <p>使用授权码交换访问令牌和刷新令牌：</p>
+      <button onclick="exchangeToken()" id="exchange-btn" disabled>交换令牌</button>
+      <div id="token-response" class="token-display" style="display: none;"></div>
+    </div>
+
+    <div class="step">
+      <h3>步骤 4: 获取用户信息</h3>
+      <p>使用访问令牌获取用户信息：</p>
+      <button onclick="getUserInfo()" id="userinfo-btn" disabled>获取用户信息</button>
+      <div id="userinfo-response" class="token-display" style="display: none;"></div>
+    </div>
+
+    <div class="step">
+      <h3>步骤 5: 刷新令牌</h3>
+      <p>使用刷新令牌获取新的访问令牌：</p>
+      <button onclick="refreshToken()" id="refresh-btn" disabled>刷新令牌</button>
+      <div id="refresh-response" class="token-display" style="display: none;"></div>
+    </div>
+  </div>
+
+  <script>
+    const CLIENT_ID = 'default-client'
+    const CLIENT_SECRET = 'default-secret'
+    const REDIRECT_URI = 'http://localhost:3000/callback'
+    const AUTH_SERVER = 'http://localhost:8080'
+    const STATE = 'demo-state-' + Math.random().toString(36).substring(7)
+
+    let authCode = null
+    let accessToken = null
+    let refreshTokenValue = null
+
+    // 检查URL中是否有授权码
+    window.onload = function () {
+      const urlParams = new URLSearchParams(window.location.search)
+      const code = urlParams.get('code')
+      const state = urlParams.get('state')
+      const error = urlParams.get('error')
+
+      if (error) {
+        showError('授权失败: ' + error)
+      } else if (code && state) {
+        authCode = code
+        document.getElementById('auth-code').textContent = code
+        document.getElementById('exchange-btn').disabled = false
+        showSuccess('授权码获取成功！')
+      }
+    }
+
+    function startOAuth2Flow () {
+      const authUrl = `${AUTH_SERVER}/authorize?` +
+        `response_type=code&` +
+        `client_id=${CLIENT_ID}&` +
+        `redirect_uri=${encodeURIComponent(REDIRECT_URI)}&` +
+        `scope=${encodeURIComponent('openid profile')}&` +
+        `state=${STATE}`
+
+      window.location.href = authUrl
+    }
+
+    async function exchangeToken () {
+      if (!authCode) {
+        showError('未找到授权码')
+        return
+      }
+
+      try {
+        const response = await fetch(`${AUTH_SERVER}/token`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: new URLSearchParams({
+            grant_type: 'authorization_code',
+            code: authCode,
+            redirect_uri: REDIRECT_URI,
+            client_id: CLIENT_ID,
+            client_secret: CLIENT_SECRET
+          })
+        })
+
+        const data = await response.json()
+
+        if (response.ok) {
+          accessToken = data.access_token
+          refreshTokenValue = data.refresh_token
+
+          document.getElementById('token-response').style.display = 'block'
+          document.getElementById('token-response').textContent = JSON.stringify(data, null, 2)
+          document.getElementById('userinfo-btn').disabled = false
+          document.getElementById('refresh-btn').disabled = false
+
+          showSuccess('令牌交换成功！')
+        } else {
+          showError('令牌交换失败: ' + JSON.stringify(data))
+        }
+      } catch (error) {
+        showError('请求失败: ' + error.message)
+      }
+    }
+
+    async function getUserInfo () {
+      if (!accessToken) {
+        showError('未找到访问令牌')
+        return
+      }
+
+      try {
+        const response = await fetch(`${AUTH_SERVER}/userinfo`, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+          }
+        })
+
+        const data = await response.json()
+
+        if (response.ok) {
+          document.getElementById('userinfo-response').style.display = 'block'
+          document.getElementById('userinfo-response').textContent = JSON.stringify(data, null, 2)
+          showSuccess('用户信息获取成功！')
+        } else {
+          showError('获取用户信息失败: ' + JSON.stringify(data))
+        }
+      } catch (error) {
+        showError('请求失败: ' + error.message)
+      }
+    }
+
+    async function refreshToken () {
+      if (!refreshTokenValue) {
+        showError('未找到刷新令牌')
+        return
+      }
+
+      try {
+        const response = await fetch(`${AUTH_SERVER}/token`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: new URLSearchParams({
+            grant_type: 'refresh_token',
+            refresh_token: refreshTokenValue,
+            client_id: CLIENT_ID,
+            client_secret: CLIENT_SECRET
+          })
+        })
+
+        const data = await response.json()
+
+        if (response.ok) {
+          accessToken = data.access_token
+
+          document.getElementById('refresh-response').style.display = 'block'
+          document.getElementById('refresh-response').textContent = JSON.stringify(data, null, 2)
+
+          showSuccess('令牌刷新成功！')
+        } else {
+          showError('令牌刷新失败: ' + JSON.stringify(data))
+        }
+      } catch (error) {
+        showError('请求失败: ' + error.message)
+      }
+    }
+
+    function showError (message) {
+      const errorDiv = document.createElement('div')
+      errorDiv.className = 'error'
+      errorDiv.textContent = message
+      document.body.insertBefore(errorDiv, document.body.firstChild)
+
+      setTimeout(() => {
+        errorDiv.remove()
+      }, 5000)
+    }
+
+    function showSuccess (message) {
+      const successDiv = document.createElement('div')
+      successDiv.className = 'success'
+      successDiv.textContent = message
+      document.body.insertBefore(successDiv, document.body.firstChild)
+
+      setTimeout(() => {
+        successDiv.remove()
+      }, 5000)
+    }
+  </script>
+</body>
+
+</html>

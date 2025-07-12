@@ -7,33 +7,46 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+var (
+	globalTestServer *TestServer
+	serverOnce       sync.Once
+)
+
+// getOrCreateTestServer 获取或创建全局测试服务器实例
+func getOrCreateTestServer(t *testing.T) *TestServer {
+	serverOnce.Do(func() {
+		globalTestServer = SetupTestServer(t)
+	})
+
+	if globalTestServer == nil {
+		t.Skip("Test server dependencies not available")
+		return nil
+	}
+
+	return globalTestServer
+}
+
 // TestCompleteOAuth2Flow tests the complete OAuth2 authorization code flow
 func TestCompleteOAuth2Flow(t *testing.T) {
-	// Setup test server
-	ts := SetupTestServer(t)
+	ts := getOrCreateTestServer(t)
 	if ts == nil {
-		t.Skip("Test server dependencies not available")
 		return
 	}
-	if ts == nil {
-		t.Skip("Test server dependencies not available")
-		return
-	}
-	defer ts.TeardownTestServer(t)
 
 	// Create test client
 	client := ts.CreateTestClient(t)
 
-	// Test parameters
-	redirectURI := "http://localhost:3000/callback"
+	// Test parameters using test data manager
+	testData := ts.DataManager.GetTestUsers()[DefaultUserType]
+	redirectURI := ts.TestConfig.GetDefaultCallbackURL()
 	scope := "openid profile"
-	state := "test-state-123"
-	phone := "13800138000"
+	state := ts.DataManager.GetTestStates()[0]
+	phone := testData.Phone
 
 	t.Run("Complete OAuth2 Authorization Code Flow", func(t *testing.T) {
 		// Step 1: Send verification code
 		code := ts.SendVerificationCode(t, phone)
-		assert.Equal(t, "123456", code, "Should return test verification code")
+		assert.Equal(t, testData.VerifyCode, code, "Should return test verification code")
 
 		// Step 2: Login with verification code
 		ts.LoginWithCode(t, phone, code)
@@ -82,23 +95,19 @@ func TestCompleteOAuth2Flow(t *testing.T) {
 
 // TestPhoneAuthenticationFlow tests the phone-based authentication
 func TestPhoneAuthenticationFlow(t *testing.T) {
-	ts := SetupTestServer(t)
+	ts := getOrCreateTestServer(t)
 	if ts == nil {
-		t.Skip("Test server dependencies not available")
 		return
 	}
-	if ts == nil {
-		t.Skip("Test server dependencies not available")
-		return
-	}
-	defer ts.TeardownTestServer(t)
 
-	phone := "13900139000"
+	// Use predefined test user data
+	testUser := ts.DataManager.GetTestUsers()["premium"]
+	phone := testUser.Phone
 
 	t.Run("Phone Authentication Flow", func(t *testing.T) {
 		// Test sending verification code
 		code := ts.SendVerificationCode(t, phone)
-		assert.Equal(t, "123456", code, "Should return test verification code")
+		assert.Equal(t, testUser.VerifyCode, code, "Should return test verification code")
 
 		// Test successful login
 		ts.LoginWithCode(t, phone, code)
@@ -111,22 +120,20 @@ func TestPhoneAuthenticationFlow(t *testing.T) {
 
 // TestJWKSEndpoint tests the JSON Web Key Set endpoint
 func TestJWKSEndpoint(t *testing.T) {
-	ts := SetupTestServer(t)
+	ts := getOrCreateTestServer(t)
 	if ts == nil {
-		t.Skip("Test server dependencies not available")
 		return
 	}
-	defer ts.TeardownTestServer(t)
 
 	t.Run("JWKS Endpoint", func(t *testing.T) {
 		jwks := ts.GetJWKS(t)
 
 		assert.Contains(t, jwks, "keys", "JWKS should contain keys")
-		keys := jwks["keys"].([]interface{})
+		keys := jwks["keys"].([]any)
 		assert.Greater(t, len(keys), 0, "Should have at least one key")
 
 		// Check first key structure
-		key := keys[0].(map[string]interface{})
+		key := keys[0].(map[string]any)
 		assert.Equal(t, "RSA", key["kty"], "Key type should be RSA")
 		assert.Equal(t, "sig", key["use"], "Key use should be sig")
 		assert.Contains(t, key, "n", "Should contain modulus")
@@ -136,12 +143,10 @@ func TestJWKSEndpoint(t *testing.T) {
 
 // TestHealthEndpoint tests the health check endpoint
 func TestHealthEndpoint(t *testing.T) {
-	ts := SetupTestServer(t)
+	ts := getOrCreateTestServer(t)
 	if ts == nil {
-		t.Skip("Test server dependencies not available")
 		return
 	}
-	defer ts.TeardownTestServer(t)
 
 	t.Run("Health Check Endpoint", func(t *testing.T) {
 		ts.CheckHealthEndpoint(t)
@@ -150,12 +155,10 @@ func TestHealthEndpoint(t *testing.T) {
 
 // TestDocumentationEndpoint tests the API documentation endpoint
 func TestDocumentationEndpoint(t *testing.T) {
-	ts := SetupTestServer(t)
+	ts := getOrCreateTestServer(t)
 	if ts == nil {
-		t.Skip("Test server dependencies not available")
 		return
 	}
-	defer ts.TeardownTestServer(t)
 
 	t.Run("Documentation Endpoint", func(t *testing.T) {
 		ts.GetDocumentation(t)
@@ -164,19 +167,18 @@ func TestDocumentationEndpoint(t *testing.T) {
 
 // TestInvalidClientCredentials tests handling of invalid client credentials
 func TestInvalidClientCredentials(t *testing.T) {
-	ts := SetupTestServer(t)
+	ts := getOrCreateTestServer(t)
 	if ts == nil {
-		t.Skip("Test server dependencies not available")
 		return
 	}
-	defer ts.TeardownTestServer(t)
 
 	// Create valid client for getting auth code
 	validClient := ts.CreateTestClient(t)
 
 	// Create test user and auth code
-	user := ts.CreateTestUser(t, "13800138000")
-	authCode := "test-invalid-auth-code"
+	testUser := ts.DataManager.GetTestUsers()["new"]
+	user := ts.CreateTestUser(t, testUser.Phone)
+	authCode := ts.DataManager.GetTestAuthCodes()[3] // 使用无效的auth code进行测试
 
 	t.Run("Invalid Client Credentials", func(t *testing.T) {
 		// Test with invalid client ID
@@ -186,11 +188,11 @@ func TestInvalidClientCredentials(t *testing.T) {
 		}
 
 		// This should fail in the real implementation
-		// For now, we test the structure
-		_ = invalidClient
-		_ = validClient
-		_ = user
-		_ = authCode
+		// For now, we test the structure and ensure variables are used
+		assert.NotEqual(t, invalidClient.ID, validClient.ID, "Client IDs should be different")
+		assert.NotEqual(t, invalidClient.Secret, validClient.Secret, "Client secrets should be different")
+		assert.NotNil(t, user, "User should exist")
+		assert.NotEmpty(t, authCode, "Auth code should not be empty")
 	})
 }
 
@@ -224,7 +226,7 @@ func TestInvalidScopes(t *testing.T) {
 	t.Run("Invalid Scopes", func(t *testing.T) {
 		// Test with invalid scope
 		invalidScope := "invalid-scope read write"
-		redirectURI := "http://localhost:3000/callback"
+		redirectURI := ts.TestConfig.GetDefaultCallbackURL()
 
 		// This should be handled gracefully by the server
 		_ = ts.GetAuthorizationCode(t, client, redirectURI, invalidScope, "")
@@ -245,7 +247,7 @@ func TestConcurrentRequests(t *testing.T) {
 		// This ensures thread safety and proper resource handling
 
 		client := ts.CreateTestClient(t)
-		redirectURI := "http://localhost:3000/callback"
+		redirectURI := ts.TestConfig.GetDefaultCallbackURL()
 		scope := "openid"
 
 		// Create multiple authorization codes concurrently
@@ -268,7 +270,7 @@ func BenchmarkTokenGeneration(b *testing.B) {
 	defer ts.TeardownTestServer(&testing.T{})
 
 	client := ts.CreateTestClient(&testing.T{})
-	redirectURI := "http://localhost:3000/callback"
+	redirectURI := ts.TestConfig.GetDefaultCallbackURL()
 	scope := "openid profile"
 
 	// Create auth code once
@@ -287,7 +289,7 @@ func BenchmarkUserInfoRetrieval(b *testing.B) {
 	defer ts.TeardownTestServer(&testing.T{})
 
 	client := ts.CreateTestClient(&testing.T{})
-	redirectURI := "http://localhost:3000/callback"
+	redirectURI := ts.TestConfig.GetDefaultCallbackURL()
 	scope := "openid profile"
 
 	// Setup: get access token

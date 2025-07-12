@@ -30,32 +30,22 @@ func TestMain(m *testing.M) {
 func setupTestEnvironment() {
 	log.Println("📋 Setting up test environment...")
 
-	// Set default test environment variables if not already set
-	if os.Getenv("TEST_DATABASE_URL") == "" {
-		os.Setenv("TEST_DATABASE_URL", "postgres://postgres:1q2w3e4r@localhost:5432/oauth2_test?sslmode=disable")
-	}
+	// Get test configuration (will use environment variables if available)
+	config := GetTestConfig()
 
-	if os.Getenv("TEST_REDIS_URL") == "" {
-		os.Setenv("TEST_REDIS_URL", "redis://localhost:6379/15")
-	}
+	// Set environment variables for other components that might need them
+	os.Setenv("TEST_DATABASE_URL", config.DatabaseURL)
+	os.Setenv("TEST_REDIS_URL", config.RedisURL)
+	os.Setenv("TEST_PORT", config.TestPort)
+	os.Setenv("GIN_MODE", "test")
+	os.Setenv("JWT_SECRET", config.JWTSecret)
 
-	if os.Getenv("TEST_PORT") == "" {
-		os.Setenv("TEST_PORT", "8081")
-	}
-
-	if os.Getenv("GIN_MODE") == "" {
-		os.Setenv("GIN_MODE", "test")
-	}
-
-	// Set JWT secret for testing
-	if os.Getenv("JWT_SECRET") == "" {
-		os.Setenv("JWT_SECRET", "test-jwt-secret-key-for-oauth2-server")
-	}
-
-	log.Printf("  Database: %s", os.Getenv("TEST_DATABASE_URL"))
-	log.Printf("  Redis: %s", os.Getenv("TEST_REDIS_URL"))
-	log.Printf("  Port: %s", os.Getenv("TEST_PORT"))
-	log.Printf("  Mode: %s", os.Getenv("GIN_MODE"))
+	log.Printf("  Database: %s", config.DatabaseURL)
+	log.Printf("  Redis: %s", config.RedisURL)
+	log.Printf("  Port: %s", config.TestPort)
+	log.Printf("  JWT Secret: %s", maskSecret(config.JWTSecret))
+	log.Printf("  Test Timeout: %v", config.TestTimeout)
+	log.Printf("  Cleanup Data: %v", config.CleanupData)
 
 	log.Println("✅ Test environment setup completed")
 }
@@ -64,34 +54,22 @@ func setupTestEnvironment() {
 func cleanupTestEnvironment() {
 	log.Println("🧹 Cleaning up test environment...")
 
-	// Any global cleanup can be done here
-	// Note: Individual test cleanup is handled in each test
+	// Get configuration to check if cleanup is enabled
+	config := GetTestConfig()
+	if config.CleanupData {
+		log.Println("  Cleanup enabled - test data will be cleaned")
+		// Individual test cleanup is handled in each test
+	} else {
+		log.Println("  Cleanup disabled - test data will be preserved")
+	}
 
 	log.Println("✅ Test environment cleanup completed")
 }
 
-// TestConfig holds common test configuration
-type TestConfig struct {
-	DatabaseURL string
-	RedisURL    string
-	TestPort    string
-	JWTSecret   string
-}
-
-// GetTestConfig returns the current test configuration
-func GetTestConfig() *TestConfig {
-	return &TestConfig{
-		DatabaseURL: getEnvOrDefault("TEST_DATABASE_URL", "postgres://postgres:1q2w3e4r@localhost:5432/oauth2_test?sslmode=disable"),
-		RedisURL:    getEnvOrDefault("TEST_REDIS_URL", "redis://localhost:6379/15"),
-		TestPort:    getEnvOrDefault("TEST_PORT", "8081"),
-		JWTSecret:   getEnvOrDefault("JWT_SECRET", "test-jwt-secret-key-for-oauth2-server"),
+// Helper function to mask secrets in logs
+func maskSecret(secret string) string {
+	if len(secret) <= 8 {
+		return "****"
 	}
-}
-
-// getEnvOrDefault returns environment variable value or default if not set
-func getEnvOrDefault(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return defaultValue
+	return secret[:4] + "****" + secret[len(secret)-4:]
 }

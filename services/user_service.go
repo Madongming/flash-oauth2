@@ -16,22 +16,25 @@ import (
 // UserService handles user authentication and management operations.
 // It provides methods for verification code handling and user account management.
 type UserService struct {
-	db    *sql.DB       // Database connection for persistent user data
-	redis *redis.Client // Redis client for temporary data (verification codes)
+	db         *sql.DB       // Database connection for persistent user data
+	redis      *redis.Client // Redis client for temporary data (verification codes)
+	smsService SMSService    // SMS service for sending verification codes
 }
 
-// NewUserService creates a new UserService instance with database and Redis connections.
+// NewUserService creates a new UserService instance with database, Redis connections and SMS service.
 //
 // Parameters:
 //   - db: Database connection for user data persistence
 //   - redis: Redis client for temporary data storage
+//   - smsService: SMS service for sending verification codes
 //
 // Returns:
 //   - *UserService: Configured user service instance
-func NewUserService(db *sql.DB, redis *redis.Client) *UserService {
+func NewUserService(db *sql.DB, redis *redis.Client, smsService SMSService) *UserService {
 	return &UserService{
-		db:    db,
-		redis: redis,
+		db:         db,
+		redis:      redis,
+		smsService: smsService,
 	}
 }
 
@@ -65,8 +68,11 @@ func (s *UserService) SendVerificationCode(phone string) error {
 	}
 
 	// 在实际应用中，这里应该调用短信服务发送验证码
-	// 为了演示，我们只是打印验证码
-	fmt.Printf("Verification code for %s: %s\n", phone, code)
+	// 使用SMS服务发送验证码
+	err = s.smsService.SendVerificationCode(phone, code)
+	if err != nil {
+		return fmt.Errorf("failed to send verification code: %w", err)
+	}
 
 	return nil
 }
@@ -124,8 +130,8 @@ func (s *UserService) VerifyCode(phone, code string) (*models.User, error) {
 func (s *UserService) findOrCreateUser(phone string) (*models.User, error) {
 	// 首先尝试查找用户
 	user := &models.User{}
-	err := s.db.QueryRow("SELECT id, phone, created_at, updated_at FROM users WHERE phone = $1", phone).
-		Scan(&user.ID, &user.Phone, &user.CreatedAt, &user.UpdatedAt)
+	err := s.db.QueryRow("SELECT id, phone, role, created_at, updated_at FROM users WHERE phone = $1", phone).
+		Scan(&user.ID, &user.Phone, &user.Role, &user.CreatedAt, &user.UpdatedAt)
 
 	if err == nil {
 		// 用户存在，更新最后登录时间
@@ -137,11 +143,11 @@ func (s *UserService) findOrCreateUser(phone string) (*models.User, error) {
 		return nil, err
 	}
 
-	// 用户不存在，创建新用户
+	// 用户不存在，创建新用户（默认角色为普通用户）
 	err = s.db.QueryRow(
-		"INSERT INTO users (phone) VALUES ($1) RETURNING id, phone, created_at, updated_at",
+		"INSERT INTO users (phone, role) VALUES ($1, 'user') RETURNING id, phone, role, created_at, updated_at",
 		phone,
-	).Scan(&user.ID, &user.Phone, &user.CreatedAt, &user.UpdatedAt)
+	).Scan(&user.ID, &user.Phone, &user.Role, &user.CreatedAt, &user.UpdatedAt)
 
 	return user, err
 }
@@ -160,8 +166,8 @@ func (s *UserService) findOrCreateUser(phone string) (*models.User, error) {
 //	user, err := userService.GetUserByID(123)
 func (s *UserService) GetUserByID(userID int) (*models.User, error) {
 	user := &models.User{}
-	err := s.db.QueryRow("SELECT id, phone, created_at, updated_at FROM users WHERE id = $1", userID).
-		Scan(&user.ID, &user.Phone, &user.CreatedAt, &user.UpdatedAt)
+	err := s.db.QueryRow("SELECT id, phone, role, created_at, updated_at FROM users WHERE id = $1", userID).
+		Scan(&user.ID, &user.Phone, &user.Role, &user.CreatedAt, &user.UpdatedAt)
 
 	if err != nil {
 		return nil, err

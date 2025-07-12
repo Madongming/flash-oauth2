@@ -12,6 +12,15 @@ import (
 	"os"
 )
 
+// SMSConfig holds configuration for SMS service (Alibaba Cloud)
+type SMSConfig struct {
+	AccessKeyId     string // Alibaba Cloud Access Key ID
+	AccessKeySecret string // Alibaba Cloud Access Key Secret
+	SignName        string // SMS signature name
+	TemplateCode    string // SMS template code
+	Enabled         bool   // Whether SMS sending is enabled (false for testing)
+}
+
 // Config holds all configuration values for the OAuth2 server.
 // It includes server settings, database connections, and cryptographic keys.
 type Config struct {
@@ -20,6 +29,7 @@ type Config struct {
 	RedisURL      string          // Redis connection string
 	JWTPrivateKey *rsa.PrivateKey // RSA private key for JWT signing
 	JWTPublicKey  *rsa.PublicKey  // RSA public key for JWT verification
+	SMS           *SMSConfig      // SMS configuration
 }
 
 // Load creates and returns a new Config instance with values loaded from
@@ -45,6 +55,13 @@ func Load() *Config {
 		RedisURL:      getEnv("REDIS_URL", "redis://localhost:6379/2"),
 		JWTPrivateKey: privateKey,
 		JWTPublicKey:  &privateKey.PublicKey,
+		SMS: &SMSConfig{
+			AccessKeyId:     getEnv("SMS_ACCESS_KEY_ID", ""),
+			AccessKeySecret: getEnv("SMS_ACCESS_KEY_SECRET", ""),
+			SignName:        getEnv("SMS_SIGN_NAME", ""),
+			TemplateCode:    getEnv("SMS_TEMPLATE_CODE", ""),
+			Enabled:         getEnv("SMS_ENABLED", "false") == "true",
+		},
 	}
 }
 

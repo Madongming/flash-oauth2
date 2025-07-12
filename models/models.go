@@ -13,6 +13,7 @@ import (
 type User struct {
 	ID        int       `json:"id" db:"id"`                 // Unique user identifier
 	Phone     string    `json:"phone" db:"phone"`           // User's phone number (unique)
+	Role      string    `json:"role" db:"role"`             // User role (user/admin)
 	CreatedAt time.Time `json:"created_at" db:"created_at"` // Account creation time
 	UpdatedAt time.Time `json:"updated_at" db:"updated_at"` // Last update time
 }

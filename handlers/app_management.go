@@ -48,6 +48,39 @@ func (h *AppManagementHandler) RegisterDeveloper(c *gin.Context) {
 	})
 }
 
+// ShowRegisterDeveloper renders the developer registration form
+func (h *AppManagementHandler) ShowRegisterDeveloper(c *gin.Context) {
+	c.HTML(http.StatusOK, "register_developer.gohtml", gin.H{
+		"title": "Register Developer",
+	})
+}
+
+// RegisterDeveloperForm handles developer registration from web form
+func (h *AppManagementHandler) RegisterDeveloperForm(c *gin.Context) {
+	var req struct {
+		Name  string `form:"name" binding:"required"`
+		Email string `form:"email" binding:"required,email"`
+		Phone string `form:"phone"`
+	}
+
+	if err := c.ShouldBind(&req); err != nil {
+		c.String(http.StatusBadRequest, "Invalid form data: %v", err.Error())
+		return
+	}
+
+	developer, err := h.appService.RegisterDeveloper(req.Name, req.Email, req.Phone)
+	if err != nil {
+		c.String(http.StatusInternalServerError, "Failed to register developer: %v", err.Error())
+		return
+	}
+
+	// Return success response for AJAX form submission
+	c.JSON(http.StatusCreated, gin.H{
+		"message":   "Developer registered successfully",
+		"developer": developer,
+	})
+}
+
 // RegisterApp handles external application registration
 func (h *AppManagementHandler) RegisterApp(c *gin.Context) {
 	var req struct {
@@ -204,7 +237,7 @@ func (h *AppManagementHandler) ShowManagementDashboard(c *gin.Context) {
 		return
 	}
 
-	c.HTML(http.StatusOK, "dashboard.html", gin.H{
+	c.HTML(http.StatusOK, "dashboard.gohtml", gin.H{
 		"title": "Application Management Dashboard",
 		"apps":  apps,
 	})
@@ -222,7 +255,7 @@ func (h *AppManagementHandler) ShowAppDetails(c *gin.Context) {
 		return
 	}
 
-	c.HTML(http.StatusOK, "app_details.html", gin.H{
+	c.HTML(http.StatusOK, "app_details.gohtml", gin.H{
 		"title":  "Application Details",
 		"app_id": appID,
 		"keys":   keys,

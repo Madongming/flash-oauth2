@@ -69,7 +69,7 @@ func main() {
 	routes.Setup(r, handler)
 
 	// 设置应用管理路由
-	routes.SetupAppManagement(r, db, redisClient)
+	routes.SetupAppManagement(r, db, redisClient, cfg)
 
 	// 启动服务器
 	log.Printf("Server starting on port %s", cfg.Port)

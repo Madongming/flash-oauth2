@@ -119,7 +119,7 @@ func (h *Handler) Authorize(c *gin.Context) {
 	userIDStr, exists := c.Get("user_id")
 	if !exists {
 		// 用户未登录，显示登录页面
-		c.HTML(http.StatusOK, "login.html", gin.H{
+		c.HTML(http.StatusOK, "login.gohtml", gin.H{
 			"client_id":     req.ClientID,
 			"redirect_uri":  req.RedirectURI,
 			"scope":         req.Scope,

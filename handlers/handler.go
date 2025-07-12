@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"flash-oauth2/config"
 	"flash-oauth2/services"
+	"fmt"
 
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
@@ -18,6 +19,7 @@ type Handler struct {
 	userService  *services.UserService  // User management and authentication
 	oauthService *services.OAuthService // OAuth2 core operations
 	jwtService   *services.JWTService   // JWT token operations
+	smsService   services.SMSService    // SMS service for testing access
 	config       *config.Config         // Server configuration
 }
 
@@ -33,7 +35,11 @@ type Handler struct {
 // Returns:
 //   - *Handler: Configured handler with all services initialized
 func New(db *sql.DB, redis *redis.Client, cfg *config.Config) *Handler {
-	userService := services.NewUserService(db, redis)
+	// 创建SMS服务
+	smsService := services.NewSMSService(cfg)
+
+	// 创建用户服务，传入SMS服务
+	userService := services.NewUserService(db, redis, smsService)
 	oauthService := services.NewOAuthService(db)
 	jwtService := services.NewJWTService(cfg.JWTPrivateKey, cfg.JWTPublicKey, "flash-oauth2")
 
@@ -41,6 +47,7 @@ func New(db *sql.DB, redis *redis.Client, cfg *config.Config) *Handler {
 		userService:  userService,
 		oauthService: oauthService,
 		jwtService:   jwtService,
+		smsService:   smsService,
 		config:       cfg,
 	}
 }
@@ -55,7 +62,8 @@ func New(db *sql.DB, redis *redis.Client, cfg *config.Config) *Handler {
 //   - Includes all endpoints, models, and usage examples
 //
 // Example:
-//   curl http://localhost:8080/docs
+//
+//	curl http://localhost:8080/docs
 func (h *Handler) Documentation(c *gin.Context) {
 	c.Header("Content-Type", "text/html; charset=utf-8")
 	c.String(200, getAPIDocumentationHTML())
@@ -345,4 +353,109 @@ curl http://localhost:8080/.well-known/jwks.json</pre>
     </div>
 </body>
 </html>`
+}
+
+// AdminLogin shows the admin login page
+// This endpoint provides a login form specifically for admin users
+//
+// GET /admin/login
+//
+// Returns:
+//   - HTML login form for admin authentication
+func (h *Handler) AdminLogin(c *gin.Context) {
+	// Check if already logged in
+	session := getAdminSession(c)
+	if userID, exists := session["user_id"]; exists {
+		if userID != "" {
+			// Already logged in, redirect to dashboard
+			c.Redirect(302, "/admin/dashboard")
+			return
+		}
+	}
+
+	// Show login form
+	c.HTML(200, "admin_login.gohtml", gin.H{
+		"error": c.Query("error"),
+	})
+}
+
+// AdminLoginPost handles admin login form submission
+// This endpoint processes admin authentication using phone + verification code
+//
+// POST /admin/login
+//
+// Form parameters:
+//   - phone: Admin's phone number
+//   - code: Verification code
+//
+// Returns:
+//   - Redirect to dashboard on success
+//   - Redirect back to login with error on failure
+func (h *Handler) AdminLoginPost(c *gin.Context) {
+	phone := c.PostForm("phone")
+	code := c.PostForm("code")
+
+	if phone == "" || code == "" {
+		c.Redirect(302, "/admin/login?error=请填写完整的登录信息")
+		return
+	}
+
+	// Verify the code using existing user service
+	user, err := h.userService.VerifyCode(phone, code)
+	if err != nil {
+		c.Redirect(302, "/admin/login?error="+err.Error())
+		return
+	}
+
+	// Check if user has admin role
+	if user.Role != "admin" {
+		c.Redirect(302, "/admin/login?error=您没有管理员权限，无法访问管理平台")
+		return
+	}
+
+	// Set admin session
+	setAdminSession(c, "user_id", fmt.Sprintf("%d", user.ID))
+
+	// Redirect to dashboard
+	c.Redirect(302, "/admin/dashboard")
+}
+
+// AdminLogout handles admin logout
+// This endpoint clears the admin session and redirects to login
+//
+// POST /admin/logout
+//
+// Returns:
+//   - Redirect to login page
+func (h *Handler) AdminLogout(c *gin.Context) {
+	clearAdminSession(c)
+	c.Redirect(302, "/admin/login?message=已安全退出")
+}
+
+// GetSMSService returns the SMS service instance (for testing)
+func (h *Handler) GetSMSService() services.SMSService {
+	return h.smsService
+}
+
+// Helper functions for admin session management
+func getAdminSession(c *gin.Context) map[string]interface{} {
+	session := make(map[string]interface{})
+
+	// Get user_id from cookie
+	if userID, err := c.Cookie("admin_user_id"); err == nil && userID != "" {
+		session["user_id"] = userID
+	}
+
+	return session
+}
+
+func setAdminSession(c *gin.Context, key string, value interface{}) {
+	switch key {
+	case "user_id":
+		c.SetCookie("admin_user_id", value.(string), 86400, "/admin", "", false, true) // 24 hours, HttpOnly
+	}
+}
+
+func clearAdminSession(c *gin.Context) {
+	c.SetCookie("admin_user_id", "", -1, "/admin", "", false, true)
 }

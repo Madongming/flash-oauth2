@@ -66,6 +66,7 @@ func Migrate(db *sql.DB) error {
 	CREATE TABLE IF NOT EXISTS users (
 		id SERIAL PRIMARY KEY,
 		phone VARCHAR(20) UNIQUE NOT NULL,
+		role VARCHAR(20) DEFAULT 'user' CHECK (role IN ('user', 'admin')),
 		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 	);`
@@ -197,6 +198,25 @@ func Migrate(db *sql.DB) error {
 			'openid profile email phone')
 	ON CONFLICT (id) DO NOTHING;`
 
-	_, err := db.Exec(insertDefaultClient)
+	if _, err := db.Exec(insertDefaultClient); err != nil {
+		return err
+	}
+
+	// 添加角色字段到现有用户表（如果不存在）
+	addRoleColumn := `
+	ALTER TABLE users 
+	ADD COLUMN IF NOT EXISTS role VARCHAR(20) DEFAULT 'user' CHECK (role IN ('user', 'admin'));`
+
+	if _, err := db.Exec(addRoleColumn); err != nil {
+		return err
+	}
+
+	// 插入默认管理员用户
+	insertDefaultAdmin := `
+	INSERT INTO users (phone, role) 
+	VALUES ('admin', 'admin')
+	ON CONFLICT (phone) DO UPDATE SET role = 'admin';`
+
+	_, err := db.Exec(insertDefaultAdmin)
 	return err
 }

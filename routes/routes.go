@@ -5,7 +5,9 @@ import (
 	"html/template"
 	"os"
 
+	"flash-oauth2/config"
 	"flash-oauth2/handlers"
+	"flash-oauth2/middleware"
 	"flash-oauth2/models"
 	"flash-oauth2/services"
 
@@ -36,17 +38,28 @@ func Setup(r *gin.Engine, handler *handlers.Handler) {
 	})
 }
 
-// SetupAppManagement adds application management routes
-func SetupAppManagement(r *gin.Engine, db *sql.DB, redis *redis.Client) {
+// SetupAppManagement adds application management routes with admin authentication
+func SetupAppManagement(r *gin.Engine, db *sql.DB, redis *redis.Client, cfg *config.Config) {
 	appService := services.NewAppManagementService(db)
 	appHandler := handlers.NewAppManagementHandler(appService)
+
+	// Create SMS service
+	smsService := services.NewSMSService(cfg)
+
+	// Create user service for admin authentication with SMS service
+	userService := services.NewUserService(db, redis, smsService)
+
+	// Create main handler for admin auth endpoints
+	// We need to get the config for this, but for now we'll create a minimal handler
+	// Create admin auth middleware
+	adminAuth := middleware.NewAdminAuth(userService)
 
 	// Add custom template functions
 	r.SetFuncMap(template.FuncMap{
 		"add": func(a, b int) int {
 			return a + b
 		},
-		"countActive": func(apps interface{}) int {
+		"countActive": func(apps any) int {
 			count := 0
 			if appSlice, ok := apps.([]*models.ExternalApp); ok {
 				for _, app := range appSlice {
@@ -68,22 +81,39 @@ func SetupAppManagement(r *gin.Engine, db *sql.DB, redis *redis.Client) {
 	} else {
 		// For testing, create minimal templates in memory
 		r.SetHTMLTemplate(template.Must(template.New("").Parse(`
-			{{define "dashboard.html"}}<!DOCTYPE html><html><head><title>Dashboard</title></head><body><h1>Dashboard</h1></body></html>{{end}}
-			{{define "app_details.html"}}<!DOCTYPE html><html><head><title>App Details</title></head><body><h1>App Details</h1></body></html>{{end}}
-			{{define "login.html"}}<!DOCTYPE html><html><head><title>Login</title></head><body><h1>Login</h1></body></html>{{end}}
+			{{define "dashboard.gohtml"}}<!DOCTYPE html><html><head><title>Dashboard</title></head><body><h1>Dashboard</h1></body></html>{{end}}
+			{{define "app_details.gohtml"}}<!DOCTYPE html><html><head><title>App Details</title></head><body><h1>App Details</h1></body></html>{{end}}
+			{{define "login.gohtml"}}<!DOCTYPE html><html><head><title>Login</title></head><body><h1>Login</h1></body></html>{{end}}
+			{{define "admin_login.gohtml"}}<!DOCTYPE html><html><head><title>Admin Login</title></head><body><h1>Admin Login</h1></body></html>{{end}}
+			{{define "register_developer.gohtml"}}<!DOCTYPE html><html><head><title>Register Developer</title></head><body><h1>Register Developer</h1></body></html>{{end}}
 		`)))
 	}
 
-	// Admin web interface
+	// We need to create a handler with proper config for admin auth
+	// For now, let's create a minimal handler setup
+	handler := handlers.New(db, redis, cfg)
+
+	// Admin authentication routes (no auth required)
+	r.GET("/admin/login", handler.AdminLogin)
+	r.POST("/admin/login", handler.AdminLoginPost)
+	r.POST("/admin/logout", handler.AdminLogout)
+
+	// Admin web interface (auth required)
 	admin := r.Group("/admin")
+	admin.Use(adminAuth.RequireAdmin())
 	{
 		admin.GET("/dashboard", appHandler.ShowManagementDashboard)
 		admin.GET("/apps/:app_id", appHandler.ShowAppDetails)
 		admin.GET("/apps/:app_id/keys", appHandler.ShowAppDetails) // Alias for key management
+
+		// Developer management pages
+		admin.GET("/developers/new", appHandler.ShowRegisterDeveloper)
+		admin.POST("/developers", appHandler.RegisterDeveloperForm)
 	}
 
-	// Admin API endpoints
+	// Admin API endpoints (auth required)
 	api := r.Group("/api/admin")
+	api.Use(adminAuth.RequireAdmin())
 	{
 		// Developer management
 		api.POST("/developers", appHandler.RegisterDeveloper)

@@ -53,14 +53,17 @@ func TestDeveloperRegistration(t *testing.T) {
 	}
 	defer ts.TeardownTestServer(t)
 
-	t.Run("Developer Registration", func(t *testing.T) {
-		// Test valid developer registration
+	t.Run("Developer Registration", func(t *testing.T) { // Test valid developer registration
 		t.Run("Valid Registration", func(t *testing.T) {
 			developer := ts.RegisterTestDeveloper(t)
+
+			// Get expected data from test data manager
+			expectedDevData := ts.DataManager.GetTestDevelopers()[DefaultDeveloperType]
+
 			assert.NotEmpty(t, developer.ID)
-			assert.Equal(t, "Test Company", developer.Name)
-			assert.Equal(t, "test@company.com", developer.Email)
-			assert.Equal(t, "active", developer.Status)
+			assert.Equal(t, expectedDevData.Name, developer.Name)
+			assert.Contains(t, developer.Email, expectedDevData.Email) // Check that original email is contained in unique email
+			assert.Equal(t, expectedDevData.Status, developer.Status)
 		})
 	})
 }
@@ -86,7 +89,7 @@ func TestKeyManagement(t *testing.T) {
 			assert.NotEmpty(t, keyPair.PrivateKey)
 			assert.NotEmpty(t, keyPair.PublicKey)
 			assert.Equal(t, app.ID, keyPair.AppID)
-			assert.Equal(t, "active", keyPair.Status)
+			assert.Equal(t, "active", keyPair.Status) // This is expected from the API response, not test data
 			assert.True(t, strings.Contains(keyPair.PrivateKey, "BEGIN") && strings.Contains(keyPair.PrivateKey, "PRIVATE KEY"))
 			assert.True(t, strings.Contains(keyPair.PublicKey, "BEGIN") && strings.Contains(keyPair.PublicKey, "PUBLIC KEY"))
 		})

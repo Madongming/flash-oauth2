@@ -1,4 +1,7 @@
 .PHONY: help build run test clean docker-build docker-run dev start stop logs
+VERSION ?= $(shell git describe --dirty --always --tags | sed 's/-/./2' | sed 's/-/./2' )
+TAG ?= $(VERSION)
+FLASHX_IMG ?= flash-oauth2:${TAG}
 
 # 默认目标
 help:
@@ -86,7 +89,8 @@ fmt:
 # 构建Docker镜像
 docker-build:
 	@echo "🐳 构建Docker镜像..."
-	docker build -t flash-oauth2 .
+	#docker build -t flash-oauth2 .
+	docker buildx build --platform linux/amd64 . -t ${FLASHX_IMG} --load
 
 # 运行Docker容器
 docker-run: docker-build

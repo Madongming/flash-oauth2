@@ -43,10 +43,10 @@ func TestAPIEndpoints(t *testing.T) {
 // TestErrorHandling tests various error scenarios
 func TestErrorHandling(t *testing.T) {
 	ts := SetupTestServer(t)
-if ts == nil {
-t.Skip("Test server dependencies not available")
-return
-}
+	if ts == nil {
+		t.Skip("Test server dependencies not available")
+		return
+	}
 	defer ts.TeardownTestServer(t)
 
 	t.Run("Error Handling", func(t *testing.T) {
@@ -76,17 +76,17 @@ return
 // TestDatabaseIntegration tests database operations
 func TestDatabaseIntegration(t *testing.T) {
 	ts := SetupTestServer(t)
-if ts == nil {
-t.Skip("Test server dependencies not available")
-return
-}
+	if ts == nil {
+		t.Skip("Test server dependencies not available")
+		return
+	}
 	defer ts.TeardownTestServer(t)
 
 	t.Run("Database Integration", func(t *testing.T) {
 		// Test user creation and retrieval
 		t.Run("User Operations", func(t *testing.T) {
-			phone := "13700137000"
-			user := ts.CreateTestUser(t, phone)
+			testUser := ts.DataManager.GetTestUsers()["inactive"]
+			user := ts.CreateTestUser(t, testUser.Phone)
 			_ = user // Use the variable
 		})
 
@@ -106,17 +106,17 @@ return
 // TestRedisIntegration tests Redis operations
 func TestRedisIntegration(t *testing.T) {
 	ts := SetupTestServer(t)
-if ts == nil {
-t.Skip("Test server dependencies not available")
-return
-}
+	if ts == nil {
+		t.Skip("Test server dependencies not available")
+		return
+	}
 	defer ts.TeardownTestServer(t)
 
 	t.Run("Redis Integration", func(t *testing.T) {
 		// Test verification code storage
 		t.Run("Verification Codes", func(t *testing.T) {
-			phone := "13600136000"
-			code := ts.SendVerificationCode(t, phone)
+			testUser := ts.DataManager.GetTestUsers()["new"]
+			code := ts.SendVerificationCode(t, testUser.Phone)
 			_ = code // Use the variable
 		})
 
@@ -130,10 +130,10 @@ return
 // TestSecurityFeatures tests security-related functionality
 func TestSecurityFeatures(t *testing.T) {
 	ts := SetupTestServer(t)
-if ts == nil {
-t.Skip("Test server dependencies not available")
-return
-}
+	if ts == nil {
+		t.Skip("Test server dependencies not available")
+		return
+	}
 	defer ts.TeardownTestServer(t)
 
 	t.Run("Security Features", func(t *testing.T) {
@@ -157,16 +157,17 @@ return
 // TestEdgeCases tests edge cases and boundary conditions
 func TestEdgeCases(t *testing.T) {
 	ts := SetupTestServer(t)
-if ts == nil {
-t.Skip("Test server dependencies not available")
-return
-}
+	if ts == nil {
+		t.Skip("Test server dependencies not available")
+		return
+	}
 	defer ts.TeardownTestServer(t)
 
 	t.Run("Edge Cases", func(t *testing.T) {
 		// Test very long phone numbers
 		t.Run("Long Phone Numbers", func(t *testing.T) {
-			longPhone := "1380013800013800138000"
+			invalidPhones := ts.DataManager.GetInvalidPhoneNumbers()
+			longPhone := invalidPhones[2] // 使用"太长"的电话号码
 			_ = longPhone
 		})
 

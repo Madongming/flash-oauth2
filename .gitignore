@@ -37,6 +37,7 @@ Thumbs.db
 .env
 .env.local
 .env.*.local
+.env.example
 
 # Log files
 *.log
@@ -63,3 +64,7 @@ pids
 *.db
 *.sqlite
 *.sqlite3
+
+cookies.txt
+
+env-local

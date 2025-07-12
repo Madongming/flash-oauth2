@@ -134,7 +134,7 @@ func (s *JWTService) GenerateIDToken(user *models.User, clientID string) (string
 //
 //	token, err := jwtService.ValidateToken("eyJhbGciOiJSUzI1NiI...")
 func (s *JWTService) ValidateToken(tokenString string) (*jwt.Token, error) {
-	return jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+	return jwt.Parse(tokenString, func(token *jwt.Token) (any, error) {
 		// 确保使用的是RSA签名方法
 		if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
 			return nil, jwt.ErrSignatureInvalid

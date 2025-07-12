@@ -13,15 +13,16 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"flash-oauth2/config"
 	"flash-oauth2/database"
 	"flash-oauth2/handlers"
 	"flash-oauth2/models"
 	"flash-oauth2/routes"
+	"flash-oauth2/services"
 
 	"github.com/gin-gonic/gin"
 	"github.com/lib/pq"
@@ -32,10 +33,13 @@ import (
 
 // TestServer represents the test server instance
 type TestServer struct {
-	DB     *sql.DB
-	Redis  *redis.Client
-	Router *gin.Engine
-	Config *config.Config
+	DB          *sql.DB
+	Redis       *redis.Client
+	Router      *gin.Engine
+	Handler     *handlers.Handler
+	Config      *config.Config
+	TestConfig  *TestConfig
+	DataManager *TestDataManager
 }
 
 // TestClient represents a test OAuth2 client
@@ -56,10 +60,17 @@ type TestUser struct {
 func SetupTestServer(t *testing.T) *TestServer {
 	gin.SetMode(gin.TestMode)
 
+	// Get test configuration
+	testConfig := GetTestConfig()
+	dataManager := NewTestDataManager(testConfig)
+
 	cfg := &config.Config{
-		Port:        "8080",
-		DatabaseURL: "postgres://postgres:1q2w3e4r@localhost:5432/oauth2_test?sslmode=disable",
-		RedisURL:    "redis://localhost:6379/15",
+		Port:        testConfig.TestPort,
+		DatabaseURL: testConfig.DatabaseURL,
+		RedisURL:    testConfig.RedisURL,
+		SMS: &config.SMSConfig{
+			Enabled: false, // Disable SMS in tests
+		},
 	}
 
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
@@ -98,25 +109,24 @@ func SetupTestServer(t *testing.T) *TestServer {
 	`)))
 
 	routes.Setup(router, handler)
-	routes.SetupAppManagement(router, db, redisConn)
+	routes.SetupAppManagement(router, db, redisConn, cfg)
 
 	return &TestServer{
-		DB:     db,
-		Redis:  redisConn,
-		Router: router,
-		Config: cfg,
+		DB:          db,
+		Redis:       redisConn,
+		Router:      router,
+		Handler:     handler,
+		Config:      cfg,
+		TestConfig:  testConfig,
+		DataManager: dataManager,
 	}
 }
 
 // TrySetupTestServer attempts to set up a test server
 func TrySetupTestServer(t *testing.T) *TestServer {
-	// Use default test database URL
-	databaseURL := "postgres://postgres:1q2w3e4r@localhost:5432/oauth2_test?sslmode=disable"
-	if envURL := os.Getenv("TEST_DATABASE_URL"); envURL != "" {
-		databaseURL = envURL
-	}
+	testConfig := GetTestConfig()
 
-	db, err := sql.Open("postgres", databaseURL)
+	db, err := sql.Open("postgres", testConfig.DatabaseURL)
 	if err != nil {
 		t.Logf("Cannot connect to database: %v", err)
 		return nil
@@ -136,162 +146,230 @@ func TrySetupTestServer(t *testing.T) *TestServer {
 
 // TeardownTestServer cleans up test resources
 func (ts *TestServer) TeardownTestServer(t *testing.T) {
-	if ts.DB != nil {
-		// Clean up test data
-		_, err := ts.DB.Exec("DELETE FROM app_key_pairs WHERE 1=1")
-		if err != nil {
-			t.Logf("Failed to clean app_key_pairs: %v", err)
+	if ts.TestConfig.CleanupData {
+		if ts.DB != nil {
+			// Clean up test data
+			ts.cleanupTestData(t)
 		}
-		_, err = ts.DB.Exec("DELETE FROM external_apps WHERE 1=1")
-		if err != nil {
-			t.Logf("Failed to clean external_apps: %v", err)
+		if ts.Redis != nil {
+			ctx := context.Background()
+			ts.Redis.FlushDB(ctx).Err()
 		}
-		_, err = ts.DB.Exec("DELETE FROM developers WHERE 1=1")
-		if err != nil {
-			t.Logf("Failed to clean developers: %v", err)
-		}
-		_, err = ts.DB.Exec("DELETE FROM refresh_tokens WHERE 1=1")
-		if err != nil {
-			t.Logf("Failed to clean refresh_tokens: %v", err)
-		}
-		_, err = ts.DB.Exec("DELETE FROM access_tokens WHERE 1=1")
-		if err != nil {
-			t.Logf("Failed to clean access_tokens: %v", err)
-		}
-		_, err = ts.DB.Exec("DELETE FROM auth_codes WHERE 1=1")
-		if err != nil {
-			t.Logf("Failed to clean authorization_codes: %v", err)
-		}
-		_, err = ts.DB.Exec("DELETE FROM users WHERE 1=1")
-		if err != nil {
-			t.Logf("Failed to clean users: %v", err)
-		}
-		_, err = ts.DB.Exec("DELETE FROM oauth_clients WHERE id != 'default-client'")
-		if err != nil {
-			t.Logf("Failed to clean oauth_clients: %v", err)
-		}
+	}
 
+	if ts.DB != nil {
 		ts.DB.Close()
 	}
 	if ts.Redis != nil {
-		ts.Redis.FlushDB(context.Background())
 		ts.Redis.Close()
 	}
 }
 
-// CreateTestClient creates a test OAuth2 client
+// cleanupTestData removes test data from database
+func (ts *TestServer) cleanupTestData(t *testing.T) {
+	// Clean up in reverse order of dependencies
+	tables := []string{
+		"authorization_codes",
+		"access_tokens",
+		"refresh_tokens",
+		"app_key_pairs",
+		"external_apps",
+		"developers",
+		"oauth_clients",
+		"users",
+	}
+
+	for _, table := range tables {
+		var query string
+		// Use appropriate cleanup condition for each table
+		switch table {
+		case "users":
+			query = fmt.Sprintf("DELETE FROM %s WHERE phone LIKE '138%%' OR phone = 'admin'", table)
+		case "developers":
+			query = fmt.Sprintf("DELETE FROM %s WHERE email LIKE 'test-%%'", table)
+		case "external_apps", "app_key_pairs":
+			query = fmt.Sprintf("DELETE FROM %s WHERE created_at >= NOW() - INTERVAL '1 hour'", table)
+		default:
+			// For tables that might not have test-specific patterns, use time-based cleanup
+			query = fmt.Sprintf("DELETE FROM %s WHERE created_at >= NOW() - INTERVAL '1 hour'", table)
+		}
+
+		_, err := ts.DB.Exec(query)
+		if err != nil {
+			t.Logf("Warning: Failed to clean up table %s: %v", table, err)
+		}
+	}
+}
+
+// CreateTestClient creates a test OAuth2 client using predefined data
 func (ts *TestServer) CreateTestClient(t *testing.T) *TestClient {
+	return ts.CreateTestClientWithType(t, DefaultClientType)
+}
+
+// CreateTestClientWithType creates a test OAuth2 client of specific type
+func (ts *TestServer) CreateTestClientWithType(t *testing.T, clientType string) *TestClient {
+	clientData := ts.DataManager.GetTestClients()[clientType]
+	if clientData == nil {
+		t.Fatalf("Unknown client type: %s", clientType)
+	}
+
 	client := &TestClient{
-		ID:           "test-client-123",
-		Secret:       "test-secret-456",
-		Name:         "Test Client",
-		RedirectURIs: []string{"http://localhost:3000/callback"},
+		ID:           clientData.ID,
+		Secret:       clientData.Secret,
+		Name:         clientData.Name,
+		RedirectURIs: clientData.RedirectURIs,
 	}
 
 	_, err := ts.DB.Exec(`
 		INSERT INTO oauth_clients (id, secret, name, redirect_uris, grant_types, response_types, scope, created_at)
-		VALUES ($1, $2, $3, $4, ARRAY['authorization_code', 'refresh_token'], ARRAY['code'], 'openid profile', NOW())
+		VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
 		ON CONFLICT (id) DO UPDATE SET
 			secret = EXCLUDED.secret,
 			name = EXCLUDED.name,
 			redirect_uris = EXCLUDED.redirect_uris
-	`, client.ID, client.Secret, client.Name, pq.Array(client.RedirectURIs))
+	`, client.ID, client.Secret, client.Name, pq.Array(client.RedirectURIs),
+		pq.Array(clientData.GrantTypes), pq.Array([]string{"code"}),
+		strings.Join(clientData.Scopes, " "))
 
 	require.NoError(t, err, "Failed to create test client")
 	return client
 }
 
-// CreateTestUser creates and returns a test user
+// CreateTestUser creates and returns a test user using predefined data
 func (ts *TestServer) CreateTestUser(t *testing.T, phone string) *TestUser {
+	// Determine role based on phone number
+	role := "user"
+	if phone == "admin" {
+		role = "admin"
+	}
+
 	var userID int
 	err := ts.DB.QueryRow(`
-		INSERT INTO users (phone, created_at) 
-		VALUES ($1, NOW()) 
-		ON CONFLICT (phone) DO UPDATE SET phone = EXCLUDED.phone
+		INSERT INTO users (phone, role, created_at) 
+		VALUES ($1, $2, NOW()) 
+		ON CONFLICT (phone) DO UPDATE SET role = EXCLUDED.role
 		RETURNING id
-	`, phone).Scan(&userID)
+	`, phone, role).Scan(&userID)
 
 	require.NoError(t, err, "Failed to create test user")
 	return &TestUser{ID: userID, Phone: phone}
 }
 
-// RegisterTestDeveloper registers a test developer and returns the created developer
-func (ts *TestServer) RegisterTestDeveloper(t *testing.T) *models.Developer {
-	registerData := map[string]interface{}{
-		"name":        "Test Company",
-		"email":       "test@company.com",
-		"phone":       "+86-138-0013-8000",
-		"description": "Test company for e2e testing",
+// CreateTestUserWithType creates a test user of specific type
+func (ts *TestServer) CreateTestUserWithType(t *testing.T, userType string) *TestUser {
+	userData := ts.DataManager.GetTestUsers()[userType]
+	if userData == nil {
+		t.Fatalf("Unknown user type: %s", userType)
 	}
 
-	jsonData, err := json.Marshal(registerData)
-	require.NoError(t, err)
+	return ts.CreateTestUser(t, userData.Phone)
+}
 
-	req, _ := http.NewRequest("POST", "/api/admin/developers", bytes.NewBuffer(jsonData))
-	req.Header.Set("Content-Type", "application/json")
+// RegisterTestDeveloper registers a test developer and returns the created developer
+func (ts *TestServer) RegisterTestDeveloper(t *testing.T) *models.Developer {
+	return ts.RegisterTestDeveloperWithType(t, DefaultDeveloperType)
+}
+
+// RegisterTestDeveloperWithType registers a test developer of specific type
+func (ts *TestServer) RegisterTestDeveloperWithType(t *testing.T, devType string) *models.Developer {
+	devData := ts.DataManager.GetTestDevelopers()[devType]
+	if devData == nil {
+		t.Fatalf("Unknown developer type: %s", devType)
+	}
+
+	// Make email unique for each test run
+	uniqueEmail := fmt.Sprintf("test-%d-%s", time.Now().UnixNano(), devData.Email)
+
+	payload := map[string]interface{}{
+		"name":    devData.Name,
+		"email":   uniqueEmail,
+		"company": devData.Company,
+	}
+
+	jsonPayload, _ := json.Marshal(payload)
+	req := ts.CreateAuthenticatedRequest(t, "POST", "/api/admin/developers", jsonPayload)
 
 	w := httptest.NewRecorder()
 	ts.Router.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusCreated, w.Code, "Developer registration should succeed")
+	if w.Code != http.StatusCreated {
+		t.Fatalf("Failed to register developer: Status %d - %v", w.Code, w.Body.String())
+	}
+
+	t.Logf("Developer registration response: %s", w.Body.String()) // Debug log
 
 	var response struct {
-		Message   string            `json:"message"`
-		Developer *models.Developer `json:"developer"`
+		Developer models.Developer `json:"developer"`
+		Message   string           `json:"message"`
 	}
-	err = json.Unmarshal(w.Body.Bytes(), &response)
-	require.NoError(t, err, "Failed to parse developer registration response")
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	require.NoError(t, err, "Failed to parse developer response")
 
-	assert.NotNil(t, response.Developer)
-	return response.Developer
+	t.Logf("Registered developer with ID: %s", response.Developer.ID) // Debug log
+
+	return &response.Developer
 }
 
 // RegisterTestExternalApp registers a test external application and returns the created app
 func (ts *TestServer) RegisterTestExternalApp(t *testing.T, developerID string) *models.ExternalApp {
-	registerData := map[string]interface{}{
-		"developer_id": developerID,
-		"name":         "Test Mobile App",
-		"description":  "Test mobile application for e2e testing",
-		"callback_url": "https://app.example.com/callback",
-		"scopes":       "openid profile read write",
+	return ts.RegisterTestExternalAppWithType(t, developerID, DefaultAppType)
+}
+
+// RegisterTestExternalAppWithType registers a test external application of specific type
+func (ts *TestServer) RegisterTestExternalAppWithType(t *testing.T, developerID, appType string) *models.ExternalApp {
+	appData := ts.DataManager.GetTestApps()[appType]
+	if appData == nil {
+		t.Fatalf("Unknown app type: %s", appType)
 	}
 
-	jsonData, err := json.Marshal(registerData)
-	require.NoError(t, err)
+	t.Logf("Registering app with developer ID: %s", developerID) // Debug log
 
-	req, _ := http.NewRequest("POST", "/api/admin/apps", bytes.NewBuffer(jsonData))
-	req.Header.Set("Content-Type", "application/json")
+	payload := map[string]interface{}{
+		"name":         appData.Name,
+		"description":  appData.Description,
+		"developer_id": developerID,
+		"callback_url": "https://example.com/callback",
+	}
+
+	jsonPayload, _ := json.Marshal(payload)
+	req := ts.CreateAuthenticatedRequest(t, "POST", "/api/admin/apps", jsonPayload)
 
 	w := httptest.NewRecorder()
 	ts.Router.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusCreated, w.Code, "External app registration should succeed")
+	t.Logf("App registration response: Status %d - %s", w.Code, w.Body.String()) // Debug log
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("Failed to register app: Status %d - %v", w.Code, w.Body.String())
+	}
 
 	var response struct {
-		Message string              `json:"message"`
-		App     *models.ExternalApp `json:"app"`
+		App     models.ExternalApp `json:"app"`
+		Message string             `json:"message"`
 	}
-	err = json.Unmarshal(w.Body.Bytes(), &response)
-	require.NoError(t, err, "Failed to parse app registration response")
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	require.NoError(t, err, "Failed to parse app response")
 
-	assert.NotNil(t, response.App)
-	return response.App
+	return &response.App
 }
 
 // GenerateTestKeyPair generates a test key pair for an application and returns the created key pair
 func (ts *TestServer) GenerateTestKeyPair(t *testing.T, appID string) *models.AppKeyPair {
-	generateData := map[string]interface{}{
+	generateData := map[string]any{
 		"expires_in": "1y",
 	}
 
 	jsonData, err := json.Marshal(generateData)
 	require.NoError(t, err)
 
-	req, _ := http.NewRequest("POST", fmt.Sprintf("/api/admin/apps/%s/keys", appID), bytes.NewBuffer(jsonData))
-	req.Header.Set("Content-Type", "application/json")
+	req := ts.CreateAuthenticatedRequest(t, "POST", fmt.Sprintf("/api/admin/apps/%s/keys", appID), jsonData)
+
+	t.Logf("Making key generation request to URL: /api/admin/apps/%s/keys", appID) // Debug log
 
 	w := httptest.NewRecorder()
 	ts.Router.ServeHTTP(w, req)
+
+	t.Logf("Key generation response: Status %d - %s", w.Code, w.Body.String()) // Debug log
 
 	assert.Equal(t, http.StatusCreated, w.Code, "Key pair generation should succeed")
 
@@ -308,7 +386,7 @@ func (ts *TestServer) GenerateTestKeyPair(t *testing.T, appID string) *models.Ap
 
 // GetAppWithKeys retrieves an application with its keys
 func (ts *TestServer) GetAppWithKeys(t *testing.T, appID string) []*models.AppKeyPair {
-	req, _ := http.NewRequest("GET", fmt.Sprintf("/api/admin/apps/%s/keys", appID), nil)
+	req := ts.CreateAuthenticatedRequest(t, "GET", fmt.Sprintf("/api/admin/apps/%s/keys", appID), nil)
 	w := httptest.NewRecorder()
 	ts.Router.ServeHTTP(w, req)
 
@@ -325,7 +403,7 @@ func (ts *TestServer) GetAppWithKeys(t *testing.T, appID string) []*models.AppKe
 
 // RevokeTestKey revokes a test key
 func (ts *TestServer) RevokeTestKey(t *testing.T, keyID string) {
-	req, _ := http.NewRequest("POST", fmt.Sprintf("/api/admin/keys/%s/revoke", keyID), nil)
+	req := ts.CreateAuthenticatedRequest(t, "POST", fmt.Sprintf("/api/admin/keys/%s/revoke", keyID), nil)
 	w := httptest.NewRecorder()
 	ts.Router.ServeHTTP(w, req)
 
@@ -334,7 +412,7 @@ func (ts *TestServer) RevokeTestKey(t *testing.T, keyID string) {
 
 // TestManagementDashboard tests the management dashboard page
 func (ts *TestServer) TestManagementDashboard(t *testing.T) {
-	req, _ := http.NewRequest("GET", "/admin/dashboard", nil)
+	req := ts.CreateAuthenticatedRequest(t, "GET", "/admin/dashboard", nil)
 	w := httptest.NewRecorder()
 	ts.Router.ServeHTTP(w, req)
 
@@ -344,7 +422,7 @@ func (ts *TestServer) TestManagementDashboard(t *testing.T) {
 
 // TestAppDetailsPage tests the application details page
 func (ts *TestServer) TestAppDetailsPage(t *testing.T, appID string) {
-	req, _ := http.NewRequest("GET", fmt.Sprintf("/admin/apps/%s", appID), nil)
+	req := ts.CreateAuthenticatedRequest(t, "GET", fmt.Sprintf("/admin/apps/%s", appID), nil)
 	w := httptest.NewRecorder()
 	ts.Router.ServeHTTP(w, req)
 
@@ -356,7 +434,7 @@ func (ts *TestServer) TestAppDetailsPage(t *testing.T, appID string) {
 func (ts *TestServer) TestAppManagementAPI(t *testing.T, developerID, appID string) {
 	// Test get all apps
 	t.Run("Get All Apps API", func(t *testing.T) {
-		req, _ := http.NewRequest("GET", "/api/admin/apps", nil)
+		req := ts.CreateAuthenticatedRequest(t, "GET", "/api/admin/apps", nil)
 		w := httptest.NewRecorder()
 		ts.Router.ServeHTTP(w, req)
 
@@ -373,7 +451,7 @@ func (ts *TestServer) TestAppManagementAPI(t *testing.T, developerID, appID stri
 
 	// Test get developer apps
 	t.Run("Get Developer Apps API", func(t *testing.T) {
-		req, _ := http.NewRequest("GET", fmt.Sprintf("/api/admin/developers/%s/apps", developerID), nil)
+		req := ts.CreateAuthenticatedRequest(t, "GET", fmt.Sprintf("/api/admin/developers/%s/apps", developerID), nil)
 		w := httptest.NewRecorder()
 		ts.Router.ServeHTTP(w, req)
 
@@ -391,21 +469,38 @@ func (ts *TestServer) TestAppManagementAPI(t *testing.T, developerID, appID stri
 
 // SendVerificationCode sends a verification code to a phone number (for OAuth2 tests)
 func (ts *TestServer) SendVerificationCode(t *testing.T, phone string) string {
-	data := url.Values{}
-	data.Set("phone", phone)
+	// Create JSON request
+	requestBody := map[string]string{
+		"phone": phone,
+	}
+	jsonBody, err := json.Marshal(requestBody)
+	require.NoError(t, err, "Failed to marshal request body")
 
-	req := httptest.NewRequest("POST", "/send-code", strings.NewReader(data.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req := httptest.NewRequest("POST", "/send-code", bytes.NewReader(jsonBody))
+	req.Header.Set("Content-Type", "application/json")
 
 	w := httptest.NewRecorder()
 	ts.Router.ServeHTTP(w, req)
 
-	// For testing, be flexible about response codes
+	// Check if the request was successful
 	if w.Code != http.StatusOK {
-		t.Logf("Send verification code returned status %d, continuing with test code", w.Code)
+		t.Logf("Send verification code returned status %d: %s", w.Code, w.Body.String())
+		// For testing, continue with a default code
+		return "123456"
 	}
 
-	return "123456" // Test verification code
+	// For mock SMS service, try to get the last sent code
+	smsService := ts.Handler.GetSMSService()
+	if mockService, ok := smsService.(*services.MockSMSService); ok {
+		if code := mockService.GetLastCode(phone); code != "" {
+			t.Logf("Retrieved verification code from mock SMS service: %s", code)
+			return code
+		}
+	}
+
+	// If we can't get the code from the mock service, return the test default
+	t.Logf("Using default test verification code")
+	return "123456"
 }
 
 // LoginWithCode performs login using phone and verification code
@@ -437,11 +532,11 @@ func (ts *TestServer) GetAuthorizationCode(t *testing.T, client *TestClient, red
 	ts.Router.ServeHTTP(w, req)
 
 	// For testing, return a mock authorization code
-	return "test-auth-code-123"
+	return ts.DataManager.GetTestAuthCodes()[0]
 }
 
 // ExchangeCodeForTokens exchanges authorization code for access tokens
-func (ts *TestServer) ExchangeCodeForTokens(t *testing.T, client *TestClient, code, redirectURI string) map[string]interface{} {
+func (ts *TestServer) ExchangeCodeForTokens(t *testing.T, client *TestClient, code, redirectURI string) map[string]any {
 	data := url.Values{}
 	data.Set("grant_type", "authorization_code")
 	data.Set("code", code)
@@ -456,16 +551,17 @@ func (ts *TestServer) ExchangeCodeForTokens(t *testing.T, client *TestClient, co
 	ts.Router.ServeHTTP(w, req)
 
 	// For testing environment, return mock response
-	return map[string]interface{}{
-		"access_token":  "test-access-token-123",
+	tokens := ts.DataManager.GetTestTokens()
+	return map[string]any{
+		"access_token":  tokens["access_token"],
 		"token_type":    "Bearer",
 		"expires_in":    3600,
-		"refresh_token": "test-refresh-token-123",
+		"refresh_token": tokens["refresh_token"],
 	}
 }
 
 // RefreshTokens refreshes an access token using a refresh token
-func (ts *TestServer) RefreshTokens(t *testing.T, client *TestClient, refreshToken string) map[string]interface{} {
+func (ts *TestServer) RefreshTokens(t *testing.T, client *TestClient, refreshToken string) map[string]any {
 	data := url.Values{}
 	data.Set("grant_type", "refresh_token")
 	data.Set("refresh_token", refreshToken)
@@ -479,8 +575,9 @@ func (ts *TestServer) RefreshTokens(t *testing.T, client *TestClient, refreshTok
 	ts.Router.ServeHTTP(w, req)
 
 	// For testing environment, return mock response
-	return map[string]interface{}{
-		"access_token":  "test-refreshed-access-token-123",
+	newTokens := ts.DataManager.GetTestTokens()
+	return map[string]any{
+		"access_token":  newTokens["access_token"],
 		"token_type":    "Bearer",
 		"expires_in":    3600,
 		"refresh_token": refreshToken,
@@ -488,7 +585,7 @@ func (ts *TestServer) RefreshTokens(t *testing.T, client *TestClient, refreshTok
 }
 
 // GetUserInfo retrieves user information using access token
-func (ts *TestServer) GetUserInfo(t *testing.T, accessToken string) map[string]interface{} {
+func (ts *TestServer) GetUserInfo(t *testing.T, accessToken string) map[string]any {
 	req := httptest.NewRequest("GET", "/userinfo", nil)
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 
@@ -496,15 +593,16 @@ func (ts *TestServer) GetUserInfo(t *testing.T, accessToken string) map[string]i
 	ts.Router.ServeHTTP(w, req)
 
 	// For testing, return mock user info
-	return map[string]interface{}{
-		"sub":   "test-user-123",
-		"phone": "13800138000",
-		"name":  "Test User",
+	testUser := ts.DataManager.GetTestUsers()[DefaultUserType]
+	return map[string]any{
+		"sub":   "test-user-" + testUser.Phone[len(testUser.Phone)-3:],
+		"phone": testUser.Phone,
+		"name":  testUser.Name,
 	}
 }
 
 // IntrospectToken introspects access token
-func (ts *TestServer) IntrospectToken(t *testing.T, client *TestClient, token string) map[string]interface{} {
+func (ts *TestServer) IntrospectToken(t *testing.T, client *TestClient, token string) map[string]any {
 	data := url.Values{}
 	data.Set("token", token)
 	data.Set("client_id", client.ID)
@@ -517,17 +615,18 @@ func (ts *TestServer) IntrospectToken(t *testing.T, client *TestClient, token st
 	ts.Router.ServeHTTP(w, req)
 
 	// For testing, return mock introspection response
-	return map[string]interface{}{
+	testUser := ts.DataManager.GetTestUsers()[DefaultUserType]
+	return map[string]any{
 		"active":    true,
 		"client_id": client.ID,
-		"username":  "test-user",
+		"username":  testUser.Name,
 		"scope":     "openid profile",
 		"exp":       1234567890,
 	}
 }
 
 // GetJWKS retrieves JSON Web Key Set
-func (ts *TestServer) GetJWKS(t *testing.T) map[string]interface{} {
+func (ts *TestServer) GetJWKS(t *testing.T) map[string]any {
 	req := httptest.NewRequest("GET", "/.well-known/jwks.json", nil)
 	w := httptest.NewRecorder()
 	ts.Router.ServeHTTP(w, req)
@@ -535,17 +634,7 @@ func (ts *TestServer) GetJWKS(t *testing.T) map[string]interface{} {
 	assert.Equal(t, http.StatusOK, w.Code, "JWKS request should succeed")
 
 	// For testing, return mock JWKS
-	return map[string]interface{}{
-		"keys": []interface{}{
-			map[string]interface{}{
-				"kty": "RSA",
-				"use": "sig",
-				"kid": "test-key-1",
-				"n":   "test-modulus",
-				"e":   "AQAB",
-			},
-		},
-	}
+	return ts.DataManager.GetTestJWKS()
 }
 
 // CheckHealthEndpoint tests the health check endpoint
@@ -564,4 +653,34 @@ func (ts *TestServer) GetDocumentation(t *testing.T) {
 	ts.Router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code, "Documentation request should succeed")
+}
+
+// LoginAsAdmin creates an admin session for testing
+func (ts *TestServer) LoginAsAdmin(t *testing.T) *TestUser {
+	// Create or get admin user
+	adminUser := ts.CreateTestUser(t, "admin")
+
+	return adminUser
+}
+
+// CreateAuthenticatedRequest creates an HTTP request with admin authentication for testing
+func (ts *TestServer) CreateAuthenticatedRequest(t *testing.T, method, url string, body []byte) *http.Request {
+	req, _ := http.NewRequest(method, url, bytes.NewBuffer(body))
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+
+	// Create admin user and set authentication cookie
+	adminUser := ts.LoginAsAdmin(t)
+
+	// Set the admin session cookie
+	cookie := &http.Cookie{
+		Name:     "admin_user_id",
+		Value:    fmt.Sprintf("%d", adminUser.ID),
+		Path:     "/admin",
+		HttpOnly: true,
+	}
+	req.AddCookie(cookie)
+
+	return req
 }

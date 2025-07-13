@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Register Application - Flash OAuth2 Admin</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 15px;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+      overflow: hidden;
+    }
+
+    .header {
+      background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+      color: white;
+      padding: 30px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .header-content h1 {
+      font-size: 2rem;
+      font-weight: 600;
+      margin-bottom: 10px;
+    }
+
+    .breadcrumb {
+      color: #bdc3c7;
+      font-size: 0.9rem;
+    }
+
+    .breadcrumb a {
+      color: #3498db;
+      text-decoration: none;
+    }
+
+    .breadcrumb a:hover {
+      text-decoration: underline;
+    }
+
+    .content {
+      padding: 40px;
+    }
+
+    .form-container {
+      max-width: 600px;
+      margin: 0 auto;
+    }
+
+    .form-group {
+      margin-bottom: 25px;
+    }
+
+    .form-group label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: 600;
+      color: #2c3e50;
+    }
+
+    .form-group input,
+    .form-group select,
+    .form-group textarea {
+      width: 100%;
+      padding: 12px 16px;
+      border: 2px solid #e1e8ed;
+      border-radius: 8px;
+      font-size: 1rem;
+      transition: border-color 0.3s ease;
+      background: white;
+    }
+
+    .form-group input:focus,
+    .form-group select:focus,
+    .form-group textarea:focus {
+      outline: none;
+      border-color: #667eea;
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+
+    .form-group input:required:valid {
+      border-left: 4px solid #27ae60;
+    }
+
+    .form-group textarea {
+      resize: vertical;
+      min-height: 80px;
+    }
+
+    .required {
+      color: #e74c3c;
+    }
+
+    .help-text {
+      font-size: 0.85rem;
+      color: #6c757d;
+      margin-top: 5px;
+    }
+
+    .btn {
+      display: inline-block;
+      padding: 12px 24px;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 600;
+      text-decoration: none;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      margin-right: 10px;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 25px rgba(102, 126, 234, 0.3);
+    }
+
+    .btn-secondary {
+      background: #6c757d;
+      color: white;
+    }
+
+    .btn-secondary:hover {
+      background: #545b62;
+      transform: translateY(-2px);
+    }
+
+    .actions {
+      display: flex;
+      gap: 15px;
+      margin-top: 30px;
+    }
+
+    .error-message {
+      background: #f8d7da;
+      color: #721c24;
+      padding: 12px;
+      border-radius: 6px;
+      margin-bottom: 20px;
+      display: none;
+    }
+
+    .success-message {
+      background: #d4edda;
+      color: #155724;
+      padding: 12px;
+      border-radius: 6px;
+      margin-bottom: 20px;
+      display: none;
+    }
+
+    .info-section {
+      background: #e8f4f8;
+      border: 1px solid #bee5eb;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 30px;
+    }
+
+    .info-section h3 {
+      color: #0c5460;
+      margin-bottom: 10px;
+    }
+
+    .info-section p {
+      color: #0c5460;
+      margin-bottom: 8px;
+    }
+
+    .loading {
+      display: none;
+      text-align: center;
+      padding: 20px;
+    }
+
+    .spinner {
+      border: 3px solid #f3f3f3;
+      border-top: 3px solid #667eea;
+      border-radius: 50%;
+      width: 30px;
+      height: 30px;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 10px;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    @media (max-width: 768px) {
+      .container {
+        margin: 10px;
+      }
+
+      .header {
+        padding: 20px;
+        flex-direction: column;
+        text-align: center;
+        gap: 15px;
+      }
+
+      .content {
+        padding: 20px;
+      }
+
+      .actions {
+        flex-direction: column;
+      }
+
+      .btn {
+        width: 100%;
+        text-align: center;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="header-content">
+        <h1>🚀 Register Application</h1>
+        <div class="breadcrumb">
+          <a href="/admin/dashboard">Dashboard</a> / Register Application
+        </div>
+      </div>
+    </div>
+
+    <div class="content">
+      <div class="form-container">
+        <div class="info-section">
+          <h3>📋 Before You Start</h3>
+          <p>• Make sure you have already registered a developer account</p>
+          <p>• Prepare your application's callback URL (OAuth redirect URI)</p>
+          <p>• Consider what OAuth scopes your application needs</p>
+        </div>
+
+        <div class="error-message" id="error-message"></div>
+        <div class="success-message" id="success-message"></div>
+        <div class="loading" id="loading">
+          <div class="spinner"></div>
+          <p>Registering application...</p>
+        </div>
+
+        <form id="registerForm">
+          <div class="form-group">
+            <label for="developer_id">Developer <span class="required">*</span></label>
+            <select id="developer_id" name="developer_id" required>
+              <option value="">Select a developer...</option>
+              {{range .developers}}
+              <option value="{{.ID}}">{{.Name}} ({{.Email}})</option>
+              {{end}}
+            </select>
+            <div class="help-text">Choose the developer who owns this application</div>
+          </div>
+
+          <div class="form-group">
+            <label for="name">Application Name <span class="required">*</span></label>
+            <input type="text" id="name" name="name" required placeholder="My Awesome App" maxlength="100">
+            <div class="help-text">A user-friendly name for your application</div>
+          </div>
+
+          <div class="form-group">
+            <label for="description">Description</label>
+            <textarea id="description" name="description" placeholder="Describe what your application does..." maxlength="500"></textarea>
+            <div class="help-text">Brief description of your application's purpose (optional)</div>
+          </div>
+
+          <div class="form-group">
+            <label for="callback_url">Callback URL <span class="required">*</span></label>
+            <input type="url" id="callback_url" name="callback_url" required 
+                   placeholder="https://your-app.com/oauth/callback">
+            <div class="help-text">OAuth redirect URI where users will be sent after authorization</div>
+          </div>
+
+          <div class="form-group">
+            <label for="scopes">OAuth Scopes</label>
+            <input type="text" id="scopes" name="scopes" placeholder="openid profile" value="openid profile">
+            <div class="help-text">Space-separated list of OAuth scopes (default: "openid profile")</div>
+          </div>
+
+          <div class="actions">
+            <a href="/admin/dashboard" class="btn btn-secondary">Cancel</a>
+            <button type="submit" class="btn btn-primary">Register Application</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    document.getElementById('registerForm').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      
+      const formData = new FormData(this);
+      const data = {
+        developer_id: formData.get('developer_id'),
+        name: formData.get('name'),
+        description: formData.get('description'),
+        callback_url: formData.get('callback_url'),
+        scopes: formData.get('scopes') || 'openid profile'
+      };
+
+      // Show loading
+      document.getElementById('loading').style.display = 'block';
+      document.getElementById('error-message').style.display = 'none';
+      document.getElementById('success-message').style.display = 'none';
+      
+      try {
+        const response = await fetch('/api/admin/apps', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(data)
+        });
+
+        const result = await response.json();
+        
+        // Hide loading
+        document.getElementById('loading').style.display = 'none';
+
+        if (response.ok) {
+          // Show success message
+          const successMsg = document.getElementById('success-message');
+          successMsg.textContent = `Application "${result.app.name}" registered successfully! ID: ${result.app.id}`;
+          successMsg.style.display = 'block';
+          
+          // Reset form
+          this.reset();
+          
+          // Redirect to dashboard after 3 seconds
+          setTimeout(() => {
+            window.location.href = '/admin/dashboard';
+          }, 3000);
+        } else {
+          // Show error message
+          const errorMsg = document.getElementById('error-message');
+          errorMsg.textContent = result.error || 'Registration failed. Please try again.';
+          errorMsg.style.display = 'block';
+        }
+      } catch (error) {
+        // Hide loading
+        document.getElementById('loading').style.display = 'none';
+        
+        // Show error message
+        const errorMsg = document.getElementById('error-message');
+        errorMsg.textContent = 'Network error. Please check your connection and try again.';
+        errorMsg.style.display = 'block';
+      }
+    });
+
+    // Real-time validation for callback URL
+    document.getElementById('callback_url').addEventListener('input', function() {
+      const url = this.value;
+      if (url && !url.startsWith('https://') && !url.startsWith('http://localhost')) {
+        this.setCustomValidity('Callback URL should use HTTPS (except for localhost)');
+      } else {
+        this.setCustomValidity('');
+      }
+    });
+  </script>
+</body>
+
+</html>

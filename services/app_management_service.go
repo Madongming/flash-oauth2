@@ -50,6 +50,36 @@ func (s *AppManagementService) RegisterDeveloper(name, email, phone string) (*mo
 	return developer, nil
 }
 
+// GetAllDevelopers retrieves all registered developers
+func (s *AppManagementService) GetAllDevelopers() ([]*models.Developer, error) {
+	rows, err := s.db.Query(`
+		SELECT id, name, email, phone, status, api_quota, created_at, updated_at
+		FROM developers
+		ORDER BY created_at DESC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query developers: %w", err)
+	}
+	defer rows.Close()
+
+	var developers []*models.Developer
+	for rows.Next() {
+		dev := &models.Developer{}
+		err := rows.Scan(&dev.ID, &dev.Name, &dev.Email, &dev.Phone,
+			&dev.Status, &dev.APIQuota, &dev.CreatedAt, &dev.UpdatedAt)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan developer: %w", err)
+		}
+		developers = append(developers, dev)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating developers: %w", err)
+	}
+
+	return developers, nil
+}
+
 // RegisterExternalApp registers a new external application
 func (s *AppManagementService) RegisterExternalApp(developerID, name, description, callbackURL, scopes string) (*models.ExternalApp, error) {
 	app := &models.ExternalApp{

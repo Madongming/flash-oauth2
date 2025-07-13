@@ -452,10 +452,13 @@ func getAdminSession(c *gin.Context) map[string]interface{} {
 func setAdminSession(c *gin.Context, key string, value interface{}) {
 	switch key {
 	case "user_id":
-		c.SetCookie("admin_user_id", value.(string), 86400, "/admin", "", false, true) // 24 hours, HttpOnly
+		// Set cookie for both /admin and /api/admin paths
+		c.SetCookie("admin_user_id", value.(string), 86400, "/admin", "", false, true)         // 24 hours, HttpOnly
+		c.SetCookie("admin_user_id_api", value.(string), 86400, "/api/admin", "", false, true) // For API paths
 	}
 }
 
 func clearAdminSession(c *gin.Context) {
 	c.SetCookie("admin_user_id", "", -1, "/admin", "", false, true)
+	c.SetCookie("admin_user_id_api", "", -1, "/api/admin", "", false, true)
 }

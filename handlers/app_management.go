@@ -112,6 +112,23 @@ func (h *AppManagementHandler) RegisterApp(c *gin.Context) {
 	})
 }
 
+// ShowRegisterApp renders the application registration form
+func (h *AppManagementHandler) ShowRegisterApp(c *gin.Context) {
+	// Get all developers for the dropdown
+	developers, err := h.appService.GetAllDevelopers()
+	if err != nil {
+		c.HTML(http.StatusInternalServerError, "error.html", gin.H{
+			"error": "Failed to load developers",
+		})
+		return
+	}
+
+	c.HTML(http.StatusOK, "register_app.gohtml", gin.H{
+		"title":      "Register Application",
+		"developers": developers,
+	})
+}
+
 // GenerateKeyPair handles key pair generation for an application
 func (h *AppManagementHandler) GenerateKeyPair(c *gin.Context) {
 	appID := c.Param("app_id")
@@ -237,9 +254,18 @@ func (h *AppManagementHandler) ShowManagementDashboard(c *gin.Context) {
 		return
 	}
 
+	developers, err := h.appService.GetAllDevelopers()
+	if err != nil {
+		c.HTML(http.StatusInternalServerError, "error.html", gin.H{
+			"error": "Failed to load developers",
+		})
+		return
+	}
+
 	c.HTML(http.StatusOK, "dashboard.gohtml", gin.H{
-		"title": "Application Management Dashboard",
-		"apps":  apps,
+		"title":      "Application Management Dashboard",
+		"apps":       apps,
+		"developers": developers,
 	})
 }
 

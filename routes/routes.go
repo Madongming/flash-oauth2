@@ -109,6 +109,9 @@ func SetupAppManagement(r *gin.Engine, db *sql.DB, redis *redis.Client, cfg *con
 		// Developer management pages
 		admin.GET("/developers/new", appHandler.ShowRegisterDeveloper)
 		admin.POST("/developers", appHandler.RegisterDeveloperForm)
+
+		// Application management pages
+		admin.GET("/apps/new", appHandler.ShowRegisterApp)
 	}
 
 	// Admin API endpoints (auth required)

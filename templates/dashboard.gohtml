@@ -298,6 +298,10 @@
             <h3>{{countActive .apps}}</h3>
             <p>Active Applications</p>
           </div>
+          <div class="stat-card">
+            <h3>{{len .developers}}</h3>
+            <p>Registered Developers</p>
+          </div>
         </div>
 
         <div class="actions">
@@ -310,8 +314,65 @@
           <a href="/docs" class="btn btn-secondary">📚 API Documentation</a>
         </div>
 
+        <!-- Developers Section -->
+        {{if .developers}}
+        <div id="developers-section" style="margin-bottom: 40px;">
+          <h2 id="developers-title" style="color: #2c3e50; margin-bottom: 20px; border-bottom: 2px solid #74b9ff; padding-bottom: 10px;">👨‍💻 Registered Developers</h2>
+          <div class="apps-grid">
+            {{range .developers}}
+            <div class="app-card">
+              <div class="app-header">
+                <div class="app-name">{{.Name}}</div>
+                <span class="app-status status-{{.Status}}">{{.Status}}</span>
+              </div>
+
+              <div class="app-info">
+                <p><strong>ID:</strong> {{.ID}}</p>
+                <p><strong>Email:</strong> {{.Email}}</p>
+                <p><strong>Phone:</strong> {{.Phone}}</p>
+                <p><strong>API Quota:</strong> {{.APIQuota}} calls/day</p>
+                <p>
+                  <strong>Registered:</strong> {{.CreatedAt.Format "2006-01-02 15:04"}}
+                </p>
+              </div>
+
+              <div class="app-actions">
+                <button class="btn btn-info btn-small" onclick="viewDeveloperApps('{{.ID}}')">
+                  📱 View Apps
+                </button>
+                {{if eq .Status "active"}}
+                <button
+                  class="btn btn-danger btn-small"
+                  onclick="suspendDeveloper('{{.ID}}')"
+                >
+                  ⏸️ Suspend
+                </button>
+                {{else}}
+                <button
+                  class="btn btn-primary btn-small"
+                  onclick="activateDeveloper('{{.ID}}')"
+                >
+                  ▶️ Activate
+                </button>
+                {{end}}
+              </div>
+            </div>
+            {{end}}
+          </div>
+        </div>
+        {{end}}        <!-- Applications Section -->
         {{if .apps}}
-        <div class="apps-grid">
+        <div>
+          <h2 style="color: #2c3e50; margin-bottom: 20px; border-bottom: 2px solid #00b894; padding-bottom: 10px;">🚀 Registered Applications</h2>
+          
+          <!-- Return to full view button (hidden by default) -->
+          <div id="return-button" style="display: none; margin-bottom: 20px;">
+            <button onclick="showAllContent()" class="btn btn-secondary">
+              ← Back to Full Dashboard
+            </button>
+          </div>
+          
+          <div class="apps-grid">
           {{range .apps}}
           <div class="app-card">
             <div class="app-header">
@@ -348,8 +409,8 @@
               </button>
               {{end}}
             </div>
+          </div>            {{end}}
           </div>
-          {{end}}
         </div>
         {{else}}
         <div class="empty-state">
@@ -387,6 +448,135 @@
                 alert('Error: ' + data.error)
               } else {
                 alert('Application revoked successfully')
+                location.reload()
+              }
+            })
+            .catch((error) => {
+              alert('Error: ' + error.message)
+            })
+        }
+      }
+
+      function viewDeveloperApps(developerId) {
+        // Hide developers section
+        const developersSection = document.getElementById('developers-section');
+        developersSection.style.display = 'none';
+        
+        // Show return button
+        document.getElementById('return-button').style.display = 'block';
+        
+        // Filter applications to show only those belonging to this developer
+        const appCards = document.querySelectorAll('.apps-grid .app-card');
+        let hasApps = false;
+        appCards.forEach(card => {
+          const developerInfo = card.querySelector('.app-info p:nth-child(2)');
+          if (developerInfo && developerInfo.textContent.includes(developerId)) {
+            card.style.display = 'block';
+            card.style.border = '2px solid #74b9ff';
+            hasApps = true;
+          } else {
+            card.style.display = 'none';
+          }
+        });
+        
+        // Update applications section title
+        const appsTitle = document.querySelector('h2:last-of-type');
+        const developerName = document.querySelector(`[onclick="viewDeveloperApps('${developerId}')"]`)
+          .closest('.app-card').querySelector('.app-name').textContent;
+        appsTitle.textContent = `🚀 Applications by ${developerName}`;
+        
+        if (!hasApps) {
+          // Show empty state for this developer
+          const appsGrid = document.querySelector('.apps-grid');
+          appsGrid.innerHTML = `
+            <div class="empty-state">
+              <h3>No Applications Found</h3>
+              <p>This developer hasn't registered any applications yet.</p>
+            </div>
+          `;
+        }
+        
+        // Scroll to applications section
+        const appsSection = document.querySelector('h2:last-of-type');
+        if (appsSection) {
+          appsSection.scrollIntoView({ behavior: 'smooth' });
+        }
+      }
+
+      function showAllContent() {
+        // Show developers section
+        const developersSection = document.getElementById('developers-section');
+        developersSection.style.display = 'block';
+        
+        // Hide return button
+        document.getElementById('return-button').style.display = 'none';
+        
+        // Show all applications
+        const appCards = document.querySelectorAll('.apps-grid .app-card');
+        appCards.forEach(card => {
+          card.style.display = 'block';
+          card.style.border = '1px solid #e1e8ed'; // Reset border
+        });
+        
+        // Reset applications section title
+        const appsTitle = document.querySelector('h2:last-of-type');
+        appsTitle.textContent = '🚀 Registered Applications';
+        
+        // Check if apps grid was replaced with empty state and reload if needed
+        const emptyState = document.querySelector('.apps-grid .empty-state');
+        if (emptyState) {
+          location.reload();
+        }
+        
+        // Scroll to top
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+
+      function suspendDeveloper(developerId) {
+        if (
+          confirm(
+            'Are you sure you want to suspend this developer? This will also suspend all their applications.'
+          )
+        ) {
+          fetch(`/api/admin/developers/${developerId}/suspend`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+          })
+            .then((response) => response.json())
+            .then((data) => {
+              if (data.error) {
+                alert('Error: ' + data.error)
+              } else {
+                alert('Developer suspended successfully')
+                location.reload()
+              }
+            })
+            .catch((error) => {
+              alert('Error: ' + error.message)
+            })
+        }
+      }
+
+      function activateDeveloper(developerId) {
+        if (
+          confirm(
+            'Are you sure you want to activate this developer?'
+          )
+        ) {
+          fetch(`/api/admin/developers/${developerId}/activate`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+          })
+            .then((response) => response.json())
+            .then((data) => {
+              if (data.error) {
+                alert('Error: ' + data.error)
+              } else {
+                alert('Developer activated successfully')
                 location.reload()
               }
             })

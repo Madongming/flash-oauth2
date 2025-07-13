@@ -5,6 +5,7 @@ package middleware
 import (
 	"flash-oauth2/models"
 	"flash-oauth2/services"
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -27,10 +28,19 @@ func NewAdminAuth(userService *services.UserService) *AdminAuth {
 // RequireAdmin middleware function that checks if the user is authenticated and has admin role
 func (a *AdminAuth) RequireAdmin() gin.HandlerFunc {
 	return gin.HandlerFunc(func(c *gin.Context) {
+		// Debug: log the request path and cookies
+		fmt.Printf("Admin auth check for path: %s\n", c.Request.URL.Path)
+		if cookie, err := c.Cookie("admin_user_id"); err == nil {
+			fmt.Printf("Found admin_user_id cookie: %s\n", cookie)
+		} else {
+			fmt.Printf("No admin_user_id cookie found: %v\n", err)
+		}
+
 		// Check if user is already authenticated via session
 		session := getSession(c)
 		userIDStr, exists := session["user_id"]
 		if !exists {
+			fmt.Printf("No user_id in session, redirecting to login\n")
 			// Not logged in, redirect to admin login
 			c.Redirect(http.StatusFound, "/admin/login")
 			c.Abort()
@@ -39,6 +49,7 @@ func (a *AdminAuth) RequireAdmin() gin.HandlerFunc {
 
 		userID, err := strconv.Atoi(userIDStr.(string))
 		if err != nil {
+			fmt.Printf("Invalid user ID format: %s, error: %v\n", userIDStr, err)
 			// Invalid user ID, clear session and redirect to login
 			clearSession(c)
 			c.Redirect(http.StatusFound, "/admin/login")
@@ -76,8 +87,10 @@ func (a *AdminAuth) RequireAdmin() gin.HandlerFunc {
 func getSession(c *gin.Context) map[string]interface{} {
 	session := make(map[string]interface{})
 
-	// Get user_id from cookie
+	// Get user_id from cookie - try both admin and api cookies
 	if userID, err := c.Cookie("admin_user_id"); err == nil && userID != "" {
+		session["user_id"] = userID
+	} else if userID, err := c.Cookie("admin_user_id_api"); err == nil && userID != "" {
 		session["user_id"] = userID
 	}
 
@@ -87,12 +100,15 @@ func getSession(c *gin.Context) map[string]interface{} {
 func setSession(c *gin.Context, key string, value interface{}) {
 	switch key {
 	case "user_id":
-		c.SetCookie("admin_user_id", value.(string), 86400, "/admin", "", false, true) // 24 hours, HttpOnly
+		// Set cookie for both /admin and /api/admin paths
+		c.SetCookie("admin_user_id", value.(string), 86400, "/admin", "", false, true)         // 24 hours, HttpOnly
+		c.SetCookie("admin_user_id_api", value.(string), 86400, "/api/admin", "", false, true) // For API paths
 	}
 }
 
 func clearSession(c *gin.Context) {
 	c.SetCookie("admin_user_id", "", -1, "/admin", "", false, true)
+	c.SetCookie("admin_user_id_api", "", -1, "/api/admin", "", false, true)
 }
 
 // Helper function to set user session

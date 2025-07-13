@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{{.title}} - {{.app_id}}</title>
+  <title>{{if .title}}{{.title}}{{else}}Application Details{{end}}{{if .app_id}} - {{.app_id}}{{end}}</title>
   <style>
     * {
       margin: 0;
@@ -290,7 +290,7 @@
       <div class="breadcrumb">
         <a href="/admin/dashboard">Dashboard</a> > Application Details
       </div>
-      <h1>🔑 Key Management - {{.app_id}}</h1>
+      <h1>🔑 Key Management{{if .app_id}} - {{.app_id}}{{end}}</h1>
     </div>
 
     <div class="content">
@@ -304,20 +304,20 @@
         {{range .keys}}
         <div class="key-card">
           <div class="key-header">
-            <div class="key-id">{{.KeyID}}</div>
-            <span class="key-status status-{{.Status}}">{{.Status}}</span>
+            <div class="key-id">{{if .KeyID}}{{.KeyID}}{{else}}Unknown{{end}}</div>
+            <span class="key-status status-{{if .Status}}{{.Status}}{{else}}unknown{{end}}">{{if .Status}}{{.Status}}{{else}}unknown{{end}}</span>
           </div>
 
           <div class="key-info-grid">
             <div class="info-item">
               <div class="info-label">Algorithm</div>
-              <div class="info-value">{{.Algorithm}}</div>
+              <div class="info-value">{{if .Algorithm}}{{.Algorithm}}{{else}}Unknown{{end}}</div>
             </div>
             <div class="info-item">
               <div class="info-label">Created</div>
               <div class="info-value">{{.CreatedAt.Format "2006-01-02 15:04"}}</div>
             </div>
-            {{if .ExpiresAt}}
+            {{if and .ExpiresAt (not .ExpiresAt.IsZero)}}
             <div class="info-item">
               <div class="info-label">Expires</div>
               <div class="info-value">{{.ExpiresAt.Format "2006-01-02 15:04"}}</div>
@@ -328,7 +328,7 @@
               <div class="info-value">Never</div>
             </div>
             {{end}}
-            {{if .LastUsedAt}}
+            {{if and .LastUsedAt (not .LastUsedAt.IsZero)}}
             <div class="info-item">
               <div class="info-label">Last Used</div>
               <div class="info-value">{{.LastUsedAt.Format "2006-01-02 15:04"}}</div>
@@ -388,6 +388,8 @@
   </div>
 
   <script>
+    const APP_ID = '{{if .app_id}}{{.app_id}}{{else}}{{end}}';
+    
     function generateKey () {
       const expiresIn = prompt('Enter expiration period (e.g., 30d, 1y, or leave empty for no expiration):')
       const payload = {}
@@ -396,7 +398,7 @@
         payload.expires_in = expiresIn.trim()
       }
 
-      fetch(`/api/admin/apps/{{.app_id}}/keys`, {
+      fetch(`/api/admin/apps/${APP_ID}/keys`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
